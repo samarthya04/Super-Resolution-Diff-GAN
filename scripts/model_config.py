@@ -1,6 +1,4 @@
 from .model_config_imports import *
-from torchvision.models import vgg19, VGG19_Weights  # Added for modern VGG loading
-import torch
 
 
 def model_selection(cfg, device):
@@ -274,20 +272,19 @@ def initialize_supresdiffgan(cfg, device, model_class, use_discriminator=True):
         The class of the model to initialize (e.g., SupResDiffGAN, SupResDiffGAN_without_adv).
     use_discriminator : bool, optional
         Whether to include the discriminator in the model initialization.
+    use_vgg_loss : bool, optional
+        Whether to include the VGG loss in the model initialization.
 
     Returns
     -------
     torch.nn.Module
         The initialized model.
     """
-    # Load autoencoder with FP16 to reduce memory usage
     if cfg.autoencoder == "VAE":
         model_id = "stabilityai/stable-diffusion-2-1"
-        autoencoder = AutoencoderKL.from_pretrained(
-            model_id, subfolder="vae", torch_dtype=torch.float16  # Use FP16 for VAE
-        ).to(device)
-        autoencoder.enable_tiling()  # Enable tiling for memory efficiency
-        autoencoder.enable_slicing()  # Enable slicing for further memory reduction
+        autoencoder = AutoencoderKL.from_pretrained(model_id, subfolder="vae").to(
+            device
+        )
 
     discriminator = (
         Discriminator_supresdiffgan(
@@ -299,8 +296,6 @@ def initialize_supresdiffgan(cfg, device, model_class, use_discriminator=True):
     )
 
     unet = UNet_supresdiffgan(cfg.unet)
-    # Removed unet.enable_gradient_checkpointing() as it is not supported
-    # Gradient checkpointing can be implemented manually if needed (see below)
 
     diffusion = Diffusion_supresdiffgan(
         timesteps=cfg.diffusion.timesteps,
@@ -308,14 +303,11 @@ def initialize_supresdiffgan(cfg, device, model_class, use_discriminator=True):
         posterior_type=cfg.diffusion.posterior_type,
     )
 
-    # Update VGG loss to use modern torchvision weights API
-    if cfg.model.use_perceptual_loss:
+    if cfg.use_perceptual_loss:
         if cfg.feature_extractor:
             vgg_loss = FeatureExtractor_supresdiffgan(device)
         else:
             vgg_loss = VGGLoss_supresdiffgan(device)
-            # If VGGLoss_supresdiffgan creates a VGG model, ensure it uses weights
-            # Example: vgg_loss.model = vgg19(weights=VGG19_Weights.IMAGENET1K_V1).to(device)
     else:
         vgg_loss = None
 
@@ -347,8 +339,10 @@ def initialize_supresdiffgan(cfg, device, model_class, use_discriminator=True):
                 alfa_adv=cfg.model.alfa_adv,
                 vgg_loss=vgg_loss,
             )
+
         else:
             raise ValueError(f"Unsupported file extension: {ext}")
+
     else:
         model = model_class(
             ae=autoencoder,
