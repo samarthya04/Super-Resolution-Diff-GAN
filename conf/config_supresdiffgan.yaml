@@ -1,41 +1,42 @@
 mode: 'train-test'
-use_perceptual_loss: true  # Moved to root level
 
 model:
   name: 'SupResDiffGAN'
   lr: 0.0001
-  alfa_perceptual: 0.001
-  alfa_adv: 0.005
-  load_model: null
+  alfa_perceptual: 0.001 # perceptual loss weight
+  alfa_adv: 0.01 # adversarial loss weight
+  use_perceptual_loss: True # to use perceptual loss, set to True
+  load_model:
 
 wandb_logger:
   project: 'SupResDiffGAN'
   entity: 'samarthya04-kiit-deemed-to-be-university'
 
 trainer:
-  max_epochs: 20  # Reduced for demo (~4-6 hours on RTX 4050)
-  max_steps: -1
+  # If both max_epochs and max_steps are set, the training will stop at the first one reached.
+  # Don't set to choose only the other one.
+  max_epochs: 20
+  max_steps: 2000
   check_val_every_n_epoch: 5
-  limit_val_batches: 0.1
-  log_every_n_steps: 50
-  precision: '16-mixed'
+  limit_val_batches: 1
+  log_every_n_steps: 1
+  precision: "16-mixed"
 
 dataset:
   name: 'celeb'
-  batch_size: 2  # Safe for 6GB VRAM
-  resize: true
-  scale: 4
+  batch_size: 4
+  resize: True
+  scale: 4 # used only for train_test split or tests
 
 evaluation:
-  mode: 'all'
-  steps:
+  mode: steps # steps, posterior, all
+  steps: # list of interference steps
     - 100
-    - 200
     - 500
-  posteriors:
+  posteriors: # list of posteriors
     - 'ddpm'
     - 'ddim'
-  save_results: true
+  save_results: True # results metrics stored in csv file
   results_file: 'evaluation_results/steps_evaluation.csv'
 
 checkpoint:
@@ -43,27 +44,27 @@ checkpoint:
   dirpath: 'models/checkpoints/'
   save_top_k: 1
   mode: 'min'
-  filename: 'SupResDiffGAN-{epoch:02d}-{val_LPIPS:.3f}'
 
 autoencoder: 'VAE'
-feature_extractor: true
+feature_extractor: True
 
 unet:
-  - 32  # Reduced for memory efficiency
   - 64
   - 96
   - 128
+  - 512
 
 diffusion:
   timesteps: 1000
   beta_type: 'cosine'
   posterior_type: 'ddpm'
-  validation_timesteps: 500
-  validation_posterior_type: 'ddim'
+  validation_timesteps: 1000
+  validation_posterior_type: 'ddpm'
 
 discriminator:
   in_channels: 6
   channels:
-    - 32  # Aligned with UNet for consistency
-    - 64
-    - 128
+  - 64
+  - 128
+  - 256
+  - 512
