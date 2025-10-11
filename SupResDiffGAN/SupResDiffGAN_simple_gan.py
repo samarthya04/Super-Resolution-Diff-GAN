@@ -4,7 +4,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import wandb
+import os
 from matplotlib import pyplot as plt
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -153,7 +153,6 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
 
         if batch_idx % 2 == 0:
             # Generator training
-            self.toggle_optimizer(optimizer_g)
             optimizer_g.zero_grad()
             g_loss = self.generator_loss(
                 x0_lat,
@@ -163,7 +162,6 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
             )
             self.manual_backward(g_loss)
             optimizer_g.step()
-            self.untoggle_optimizer(optimizer_g)
             self.log(
                 "train/g_loss",
                 g_loss,
@@ -177,12 +175,10 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
 
         else:
             # Discriminator training
-            self.toggle_optimizer(optimizer_d)
             optimizer_d.zero_grad()
             d_loss = self.discriminator_loss(hr_img, sr_img.detach())
             self.manual_backward(d_loss)
             optimizer_d.step()
-            self.untoggle_optimizer(optimizer_d)
             self.log(
                 "train/d_loss",
                 d_loss,
@@ -217,13 +213,11 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
         if batch_idx == 0:
             title = f"Epoch {self.current_epoch}"
             img_array = self.plot_images(hr_img, lr_img, sr_img, padding_info, title)
-            self.logger.experiment.log(
-                {
-                    f"Validation epoch: {self.current_epoch}": [
-                        wandb.Image(img_array, caption=f"Epoch {self.current_epoch}")
-                    ]
-                }
-            )
+            # Save validation images locally
+            os.makedirs("outputs/validation_images", exist_ok=True)
+            from PIL import Image
+            img_pil = Image.fromarray(img_array)
+            img_pil.save(f"outputs/validation_images/epoch_{self.current_epoch}.png")
 
         # Compute and log metrics
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}
@@ -327,9 +321,11 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
                 padding_info,
                 title=f"Test Images: timesteps: {self.diffusion.timesteps}, posterior: {self.diffusion.posterior_type}",
             )
-            self.logger.experiment.log(
-                {f"Test images": [wandb.Image(img_array, caption=f"Test Images")]}
-            )
+            # Save test images locally
+            os.makedirs("outputs/test_images", exist_ok=True)
+            from PIL import Image
+            img_pil = Image.fromarray(img_array)
+            img_pil.save(f"outputs/test_images/test_results_timesteps_{self.diffusion.timesteps}_posterior_{self.diffusion.posterior_type}.png")
 
         # Compute metrics
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}

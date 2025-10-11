@@ -1,6 +1,6 @@
-# Configuration Files Documentation
+# SupResDiffGAN Configuration Files Documentation
 
-This document provides an explanation of the parameters used in the configuration files located in the `conf/` directory. Each configuration file corresponds to a specific model or use case and contains parameters for training, evaluation, and logging. While there is a general pattern across the configuration files, some parameters are specific to certain models.
+This document provides an explanation of the parameters used in the configuration files located in the `conf/` directory. All configuration files are focused on SupResDiffGAN (Super-Resolution Diffusion Generative Adversarial Network) variants, which combine diffusion transformers with GANs for super-resolution tasks.
 
 ---
 
@@ -10,7 +10,7 @@ All configuration files follow a similar structure with the following sections:
 
 - **Mode**: Specifies the mode of operation (e.g., `train`, `test`, or `train-test`).
 - **Model**: Contains model-specific parameters such as learning rate, loss weights, and model name.
-- **W&B Logger**: Configuration for Weights & Biases (W&B) experiment tracking.
+- **TensorBoard Logger**: Configuration for TensorBoard experiment tracking (wandb removed).
 - **Trainer**: Parameters for training, such as the number of epochs and logging frequency.
 - **Dataset**: Parameters for dataset loading and preprocessing.
 - **Evaluation**: Parameters for evaluation, such as the number of steps and posterior types.
@@ -36,11 +36,11 @@ Defines the model-specific parameters.
 
 | Parameter              | Description                                                                                     | Example Values                |
 |------------------------|-------------------------------------------------------------------------------------------------|--------------------------------|
-| `name`                | Name of the model.                                                                              | `SupResDiffGAN`, `SRGAN`      |
+| `name`                | Name of the SupResDiffGAN variant.                                                              | `SupResDiffGAN`, `SupResDiffGAN_without_adv`, `SupResDiffGAN_simple_gan` |
 | `lr`                  | Learning rate for the optimizer.                                                                | `0.0001`, `0.0002`            |
-| `alfa_perceptual`     | Weight for the perceptual loss (specific to SupResDiffGAN).                                        | `0.001`                       |
-| `alfa_adv`            | Weight for the adversarial loss (specific to SupResDiffGAN).                                       | `0.01`                        |
-| `use_perceptual_loss` | Whether to use perceptual loss during (specific to SupResDiffGAN).                                                  | `True`, `False`               |
+| `alfa_perceptual`     | Weight for the perceptual loss.                                                                 | `0.001`                       |
+| `alfa_adv`            | Weight for the adversarial loss.                                                                | `0.01`                        |
+| `use_perceptual_loss` | Whether to use perceptual loss during training.                                                 | `True`, `False`               |
 | `load_model`          | Path to a pre-trained model checkpoint (if applicable).                                         | `models/checkpoints/model.ckpt` |
 
 ---
@@ -153,26 +153,19 @@ Some models include additional sections for specific configurations.
 - Includes parameters for `alfa_perceptual` and `alfa_adv` to control loss weights.
 - Uses `autoencoder`, `discriminator`, `unet` and `diffusion` sections for hybrid architecture.
 
-### **SRGAN**
+### **SupResDiffGAN Variants**
 
-- Includes `generator` and `discriminator` sections for GAN-specific architecture.
-- Does not use `diffusion` or `autoencoder`.
+All configuration files support three SupResDiffGAN variants:
 
-### **ESRGAN**
+- **SupResDiffGAN**: Full model with discriminator and adversarial loss
+- **SupResDiffGAN_without_adv**: Model without adversarial loss (ablation study)
+- **SupResDiffGAN_simple_gan**: Model with discriminator but without Gaussian noise augmentation
 
-- Similar to SRGAN.
-
-### **RealESRGAN**
-
-- Similar to SRGAN.
-
-### **I2SB**
-
-- Includes `unet` and `diffusion` sections for diffusion-based super-resolution.
-
-### **ResShift**
-
-- Includes `unet` and `diffusion` sections.
+All variants use:
+- `autoencoder`: VAE from Stable Diffusion for latent space processing
+- `unet`: U-Net architecture for diffusion process
+- `diffusion`: Diffusion process configuration
+- `discriminator`: GAN discriminator (except for without_adv variant)
 
 ---
 

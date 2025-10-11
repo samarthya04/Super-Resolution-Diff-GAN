@@ -4,7 +4,7 @@ import os
 from omegaconf import OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 
 from scripts.data_loader import train_val_test_loader
@@ -42,13 +42,11 @@ def main(cfg) -> None:
     torch.set_float32_matmul_precision('medium')
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
-    os.makedirs("logs/wandb", exist_ok=True)  # Add before WandbLogger
-    logger = WandbLogger(
-        project=cfg.wandb_logger.project,
+    os.makedirs("logs/tensorboard", exist_ok=True)  # Add before TensorBoardLogger
+    logger = TensorBoardLogger(
+        save_dir="logs/tensorboard",
         name=final_model_path.split("/")[-1],
-        save_dir="logs/wandb",  # Explicitly set
-        config=config_dict,
-        entity=cfg.wandb_logger.entity,
+        log_graph=False,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -70,13 +68,14 @@ def main(cfg) -> None:
     trainer = Trainer(
         max_epochs=cfg.trainer.max_epochs,
         max_steps=cfg.trainer.max_steps,
-        devices=1,  # Single GPU
+        accelerator=cfg.trainer.accelerator,  # Use GPU
+        devices=cfg.trainer.devices,  # Number of GPUs
         callbacks=[checkpoint_callback],
         logger=logger,
         check_val_every_n_epoch=cfg.trainer.check_val_every_n_epoch,
         limit_val_batches=cfg.trainer.limit_val_batches,
         log_every_n_steps=cfg.trainer.log_every_n_steps,
-        precision=cfg.trainer.precision,  # 16-mixed
+        precision=cfg.trainer.precision,  # 16-bit precision
         # strategy=DDPStrategy(find_unused_parameters=True),  # Comment out
     )
 
@@ -118,12 +117,11 @@ def adjust_model_for_testing(cfg, model) -> object:
     object
         The adjusted model object.
     """
-    # List of supported models that may require adjustments
+    # List of supported SupResDiffGAN models that may require adjustments
     models_with_diffusion = {
-        "SupResDiffGAN_v3",
-        "SR3",
-        "SupResDiffGAN_no_perceptual",
-        "I2SB",
+        "SupResDiffGAN",
+        "SupResDiffGAN_without_adv", 
+        "SupResDiffGAN_simple_gan",
     }
 
     # Check if the model requires adjustments of diffusion parameters

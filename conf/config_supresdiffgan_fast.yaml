@@ -1,0 +1,66 @@
+mode: 'train-test'
+use_perceptual_loss: false  # Disabled for maximum speed
+
+model:
+  name: 'SupResDiffGAN'
+  lr: 0.0001
+  alfa_perceptual: 0.001
+  alfa_adv: 0.005
+  load_model: null
+
+# wandb_logger removed - using TensorBoard for logging
+
+trainer:
+  max_epochs: 10  # Fewer epochs for quick testing
+  max_steps: -1
+  check_val_every_n_epoch: 5  # Less frequent validation
+  limit_val_batches: 0.02  # Very small validation set
+  log_every_n_steps: 200  # Less frequent logging
+  precision: 16
+  accelerator: 'gpu'  # Use GPU for training
+  devices: 1  # Use 1 GPU
+
+dataset:
+  name: 'celeb'
+  batch_size: 16  # Larger batch size for better GPU utilization
+  resize: true
+  scale: 4
+
+evaluation:
+  mode: 'steps'  # Simpler evaluation
+  steps:
+    - 50  # Only test with 50 timesteps
+  posteriors:
+    - 'ddpm'  # Only test DDPM
+  save_results: true
+  results_file: 'evaluation_results/fast_steps_evaluation.csv'
+
+checkpoint:
+  monitor: 'val/LPIPS'
+  dirpath: 'models/checkpoints/fast/'
+  save_top_k: 1
+  mode: 'min'
+  filename: 'SupResDiffGAN-fast-{epoch:02d}-{val_LPIPS:.3f}'
+
+autoencoder: 'VAE'
+feature_extractor: false  # Disabled for speed
+
+unet:
+  - 32   # Must be divisible by GroupNorm groups (32)
+  - 64
+  - 96
+  - 128
+
+diffusion:
+  timesteps: 25  # Very small for speed
+  beta_type: 'cosine'
+  posterior_type: 'ddpm'
+  validation_timesteps: 10  # Very small validation timesteps
+  validation_posterior_type: 'ddim'
+
+discriminator:
+  in_channels: 6
+  channels:
+    - 32  # Must be divisible by GroupNorm groups
+    - 64
+    - 128

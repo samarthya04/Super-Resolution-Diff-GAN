@@ -7,9 +7,7 @@ model:
   use_perceptual_loss: False # to use perceptual loss, set to True
   load_model:
 
-wandb_logger:
-  project: 'your_project' # your wandb project
-  entity: 'your_entity' # your wandb entity
+# wandb_logger removed - using TensorBoard for logging
 
 trainer:
   # If both max_epochs and max_steps are set, the training will stop at the first one reached.
@@ -19,6 +17,9 @@ trainer:
   check_val_every_n_epoch: 5
   limit_val_batches: 1
   log_every_n_steps: 1
+  precision: 16  # Use 16-bit precision for memory efficiency
+  accelerator: 'gpu'  # Use GPU for training
+  devices: 1  # Use 1 GPU
 
 dataset:
   name: 'celeb' 

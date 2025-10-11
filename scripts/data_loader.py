@@ -254,7 +254,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
             self.paired_images_train,
             batch_size=self.batch_size,
             shuffle=True,
-            num_workers=min(2, os.cpu_count()),
+            num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_cropping_fn,
         )
 
@@ -269,7 +269,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
         return DataLoader(
             self.paired_images_val,
             batch_size=self.batch_size,
-            num_workers=min(2, os.cpu_count()),
+            num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_padding_fn,
         )
 
@@ -284,7 +284,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
         return DataLoader(
             self.paired_images_test,
             batch_size=self.batch_size,
-            num_workers=min(2, os.cpu_count()),
+            num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_padding_fn,
         )
 

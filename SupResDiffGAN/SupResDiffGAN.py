@@ -2,7 +2,7 @@ import numpy as np
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
-import wandb
+import os
 from matplotlib import pyplot as plt
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -159,14 +159,13 @@ class SupResDiffGAN(pl.LightningModule):
             )
 
         if batch_idx % 2 == 0:
-            self.toggle_optimizer(optimizer_g)
+            # Generator training
             optimizer_g.zero_grad()
             g_loss = self.generator_loss(
                 x0_lat, x_gen_0, hr_img, sr_img, hr_s_img, sr_s_img
             )
             self.manual_backward(g_loss)
             optimizer_g.step()
-            self.untoggle_optimizer(optimizer_g)
             self.log(
                 "train/g_loss",
                 g_loss,
@@ -178,12 +177,11 @@ class SupResDiffGAN(pl.LightningModule):
             )
             return {"g_loss": g_loss}
         else:
-            self.toggle_optimizer(optimizer_d)
+            # Discriminator training
             optimizer_d.zero_grad()
             d_loss = self.discriminator_loss(hr_s_img, sr_s_img.detach())
             self.manual_backward(d_loss)
             optimizer_d.step()
-            self.untoggle_optimizer(optimizer_d)
             self.log(
                 "train/d_loss",
                 d_loss,
@@ -213,16 +211,16 @@ class SupResDiffGAN(pl.LightningModule):
         padding_info = {"lr": batch["padding_data_lr"],
                         "hr": batch["padding_data_hr"]}
 
-        # Enhanced visualization for the first 3 batches of every validation epoch
-        if batch_idx < 3:
+        # Enhanced visualization for the first batch only (for speed)
+        if batch_idx < 1:
             print(
                 f"Generating validation images for Epoch {self.current_epoch}, Batch {batch_idx}..."
             )
             try:
                 title = f"Validation Epoch {self.current_epoch} - Batch {batch_idx}"
                 per_image_metrics = []
-                # Limit to 5 samples max
-                for i in range(min(5, lr_img.shape[0])):
+                # Limit to 3 samples max (for speed)
+                for i in range(min(3, lr_img.shape[0])):
                     hr_img_np = hr_img[i].detach(
                     ).cpu().numpy().transpose(1, 2, 0)
                     sr_img_np = sr_img[i].detach(
@@ -252,16 +250,11 @@ class SupResDiffGAN(pl.LightningModule):
                 avg_metrics = [
                     np.mean([m[i] for m in per_image_metrics]) for i in range(3)
                 ]
-                self.logger.experiment.log(
-                    {
-                        f"Validation/Epoch_{self.current_epoch}_Batch_{batch_idx}": [
-                            wandb.Image(
-                                img_array,
-                                caption=f"Epoch {self.current_epoch} Batch {batch_idx} - Avg PSNR/SSIM/LPIPS: {avg_metrics[0]:.2f}/{avg_metrics[1]:.3f}/{avg_metrics[2]:.3f}",
-                            )
-                        ]
-                    }
-                )
+                # Save validation images locally
+                os.makedirs("outputs/validation_images", exist_ok=True)
+                from PIL import Image
+                img_pil = Image.fromarray(img_array)
+                img_pil.save(f"outputs/validation_images/epoch_{self.current_epoch}_batch_{batch_idx}.png")
                 print(
                     f"Successfully logged validation images for Epoch {self.current_epoch}, Batch {batch_idx}"
                 )
@@ -269,11 +262,10 @@ class SupResDiffGAN(pl.LightningModule):
                 print(
                     f"Visualization error for Epoch {self.current_epoch}, Batch {batch_idx}: {str(e)}"
                 )
-                self.logger.experiment.log(
-                    {
-                        "validation_error": f"Epoch {self.current_epoch} Batch {batch_idx}: {str(e)}"
-                    }
-                )
+                # Log validation error to file
+                os.makedirs("outputs/logs", exist_ok=True)
+                with open("outputs/logs/validation_errors.txt", "a") as f:
+                    f.write(f"Epoch {self.current_epoch} Batch {batch_idx}: {str(e)}\n")
 
         # Compute and log metrics
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}
@@ -371,8 +363,8 @@ class SupResDiffGAN(pl.LightningModule):
             Plotted image array.
         """
         fig, axs = plt.subplots(
-            3, 5, figsize=(15, 9), dpi=100
-        )  # Adjusted for better resolution
+            3, 3, figsize=(9, 9), dpi=100
+        )  # Smaller for speed
         fig.suptitle(title, fontsize=14, fontweight="bold", color="white")
 
         # Set background to dark for better contrast with W&B themes
@@ -380,7 +372,7 @@ class SupResDiffGAN(pl.LightningModule):
         for ax in axs.flat:
             ax.set_facecolor("#2e2e2e")
 
-        for i in range(5):
+        for i in range(3):
             num = np.random.randint(0, len(per_image_metrics))
             psnr, ssim, lpips_val = per_image_metrics[num]
 
@@ -475,10 +467,11 @@ class SupResDiffGAN(pl.LightningModule):
                 padding_info,
                 title=f"Test Images: Timesteps {self.diffusion.timesteps}, Posterior {self.diffusion.posterior_type}",
             )
-            self.logger.experiment.log(
-                {"Test Images": [wandb.Image(
-                    img_array, caption="Test Set SR Results")]}
-            )
+            # Save test images locally
+            os.makedirs("outputs/test_images", exist_ok=True)
+            from PIL import Image
+            img_pil = Image.fromarray(img_array)
+            img_pil.save(f"outputs/test_images/test_results_timesteps_{self.diffusion.timesteps}_posterior_{self.diffusion.posterior_type}.png")
 
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}
         for i in range(lr_img.shape[0]):

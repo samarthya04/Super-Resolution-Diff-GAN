@@ -4,10 +4,9 @@ import warnings
 import hydra
 import pandas as pd
 import torch
-import wandb
 from omegaconf import OmegaConf
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.strategies import DDPStrategy
 
 from scripts.data_loader import train_val_test_loader
@@ -49,12 +48,13 @@ def save_results_to_csv(results: list[dict], filename: str) -> None:
     df.to_csv(new_filename, index=False)
 
 
-def log_bar_charts_to_wandb(
+def save_bar_charts_locally(
     results: list[dict],
     mode: str,
+    save_dir: str = "outputs/charts"
 ) -> None:
     """
-    Log bar charts to Wandb.
+    Save bar charts locally as PNG files.
 
     Parameters
     ----------
@@ -62,7 +62,14 @@ def log_bar_charts_to_wandb(
         List of dictionaries containing the evaluation results.
     mode : str
         The evaluation mode.
+    save_dir : str
+        Directory to save the charts.
     """
+    import matplotlib.pyplot as plt
+    import os
+    
+    os.makedirs(save_dir, exist_ok=True)
+    
     if mode == "all":
         metrics = {}
         for result in results:
@@ -73,9 +80,16 @@ def log_bar_charts_to_wandb(
             metrics[metric_name].append([key, result["value"]])
 
         for metric_name, data in metrics.items():
-            table = wandb.Table(data=data, columns=["Posterior_Step", metric_name])
-            chart_key = f"bar_chart_{metric_name}"
-            wandb.log({chart_key: wandb.plot.bar(table, "Posterior_Step", metric_name)})
+            keys, values = zip(*data)
+            plt.figure(figsize=(12, 6))
+            plt.bar(keys, values)
+            plt.title(f"{metric_name} - All Configurations")
+            plt.xlabel("Posterior_Step")
+            plt.ylabel(metric_name)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(f"{save_dir}/bar_chart_{metric_name}.png", dpi=300, bbox_inches='tight')
+            plt.close()
     else:
         metrics = {}
         for result in results:
@@ -86,11 +100,16 @@ def log_bar_charts_to_wandb(
             metrics[metric_name].append([key, result["value"]])
 
         for metric_name, data in metrics.items():
-            table = wandb.Table(data=data, columns=[mode.capitalize(), metric_name])
-            chart_key = f"bar_chart_{metric_name}_{mode}"
-            wandb.log(
-                {chart_key: wandb.plot.bar(table, mode.capitalize(), metric_name)}
-            )
+            keys, values = zip(*data)
+            plt.figure(figsize=(10, 6))
+            plt.bar(keys, values)
+            plt.title(f"{metric_name} - {mode.capitalize()}")
+            plt.xlabel(mode.capitalize())
+            plt.ylabel(metric_name)
+            plt.xticks(rotation=45)
+            plt.tight_layout()
+            plt.savefig(f"{save_dir}/bar_chart_{metric_name}_{mode}.png", dpi=300, bbox_inches='tight')
+            plt.close()
 
 
 def evaluate_model(cfg, model, trainer: Trainer, test_loader) -> None:
@@ -159,7 +178,7 @@ def evaluate_model(cfg, model, trainer: Trainer, test_loader) -> None:
     else:
         raise UnknownModeException()
 
-    log_bar_charts_to_wandb(results, cfg.evaluation.mode)
+    save_bar_charts_locally(results, cfg.evaluation.mode)
 
     if cfg.evaluation.save_results:
         save_results_to_csv(results, cfg.evaluation.results_file)
@@ -192,12 +211,10 @@ def main(cfg) -> None:
 
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
-    logger = WandbLogger(
-        project=cfg.wandb.project,
+    logger = TensorBoardLogger(
+        save_dir="logs/tensorboard",
         name=final_model_path.split("/")[-1],
-        save_dir="logs",
-        config=config_dict,
-        entity=cfg.wandb.entity,
+        log_graph=False,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
