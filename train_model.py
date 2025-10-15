@@ -4,7 +4,7 @@ import os
 from omegaconf import OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy
 
 from scripts.data_loader import train_val_test_loader
@@ -42,11 +42,11 @@ def main(cfg) -> None:
     torch.set_float32_matmul_precision('medium')
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
-    os.makedirs("logs/tensorboard", exist_ok=True)  # Add before TensorBoardLogger
-    logger = TensorBoardLogger(
-        save_dir="logs/tensorboard",
+    logger = WandbLogger(
+        project=cfg.wandb_logger.project,
+        entity=cfg.wandb_logger.entity,
         name=final_model_path.split("/")[-1],
-        log_graph=False,
+        config=config_dict,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -79,12 +79,14 @@ def main(cfg) -> None:
         # strategy=DDPStrategy(find_unused_parameters=True),  # Comment out
     )
 
+    ckpt_path = cfg.trainer.get("resume_from_checkpoint")
+
     if cfg.mode == "train":
-        trainer.fit(model, train_loader, val_loader)
+        trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
         torch.save(model.state_dict(), f"{final_model_path}.pth")
 
     elif cfg.mode == "train-test":
-        trainer.fit(model, train_loader, val_loader)
+        trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
         torch.save(model.state_dict(), f"{final_model_path}.pth")
         model = adjust_model_for_testing(cfg, model)
         trainer.test(model, test_loader)

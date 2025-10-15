@@ -8,7 +8,9 @@ model:
   use_perceptual_loss: False # to use perceptual loss, set to True
   load_model:
 
-# wandb_logger removed - using TensorBoard for logging
+wandb_logger:
+  project: 'SupResDiffGAN' # your wandb project
+  entity: 'samarthya04-kiit-deemed-to-be-university' # your wandb entity
 
 trainer:
   # If both max_epochs and max_steps are set, the training will stop at the first one reached.

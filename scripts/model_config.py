@@ -1,4 +1,7 @@
+# In scripts/model_config.py
+
 from .model_config_imports import *
+from diffusers import AutoencoderTiny # Import AutoencoderTiny
 
 
 def model_selection(cfg, device):
@@ -66,10 +69,9 @@ def initialize_supresdiffgan(cfg, device, model_class, use_discriminator=True):
         The initialized model.
     """
     if cfg.autoencoder == "VAE":
-        model_id = "stabilityai/stable-diffusion-2-1"
-        autoencoder = AutoencoderKL.from_pretrained(model_id, subfolder="vae").to(
-            device
-        )
+        # Use AutoencoderTiny for lower memory consumption
+        model_id = "madebyollin/taesd"  # Model ID for AutoencoderTiny
+        autoencoder = AutoencoderTiny.from_pretrained(model_id).to(device)
 
     discriminator = (
         Discriminator_supresdiffgan(

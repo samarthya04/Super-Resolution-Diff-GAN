@@ -86,13 +86,10 @@ class SupResDiffGAN(pl.LightningModule):
             Output tensor with shape (batch_size, channels, height, width).
         """
         with torch.no_grad():
-            x_lat = (
-                self.ae.encode(x).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
+            x_lat = self.ae.encode(x).latents.detach()
         x = self.diffusion.sample(self.generator, x_lat, x_lat.shape)
         with torch.no_grad():
-            x_out = self.ae.decode(x / self.ae.config.scaling_factor).sample
+            x_out = self.ae.decode(x).sample
         x_out = torch.clamp(x_out, -1, 1)
         return x_out
 
@@ -117,14 +114,8 @@ class SupResDiffGAN(pl.LightningModule):
         optimizer_g, optimizer_d = self.optimizers()
 
         with torch.no_grad():
-            lr_lat = (
-                self.ae.encode(lr_img).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
-            x0_lat = (
-                self.ae.encode(hr_img).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
+            lr_lat = self.ae.encode(lr_img).latents.detach()
+            x0_lat = self.ae.encode(hr_img).latents.detach()
 
         timesteps = torch.randint(
             0,
@@ -145,18 +136,9 @@ class SupResDiffGAN(pl.LightningModule):
         x_gen_s = self.diffusion.forward(x_gen_0, s_tensor)
 
         with torch.no_grad():
-            sr_img = torch.clamp(
-                self.ae.decode(
-                    x_gen_0 / self.ae.config.scaling_factor).sample, -1, 1
-            )
-            hr_s_img = torch.clamp(
-                self.ae.decode(
-                    x_s / self.ae.config.scaling_factor).sample, -1, 1
-            )
-            sr_s_img = torch.clamp(
-                self.ae.decode(
-                    x_gen_s / self.ae.config.scaling_factor).sample, -1, 1
-            )
+            sr_img = torch.clamp(self.ae.decode(x_gen_0).sample, -1, 1)
+            hr_s_img = torch.clamp(self.ae.decode(x_s).sample, -1, 1)
+            sr_s_img = torch.clamp(self.ae.decode(x_gen_s).sample, -1, 1)
 
         if batch_idx % 2 == 0:
             # Generator training
@@ -250,11 +232,13 @@ class SupResDiffGAN(pl.LightningModule):
                 avg_metrics = [
                     np.mean([m[i] for m in per_image_metrics]) for i in range(3)
                 ]
-                # Save validation images locally
-                os.makedirs("outputs/validation_images", exist_ok=True)
+                # Log validation images to wandb
+                import wandb
                 from PIL import Image
                 img_pil = Image.fromarray(img_array)
-                img_pil.save(f"outputs/validation_images/epoch_{self.current_epoch}_batch_{batch_idx}.png")
+                self.logger.experiment.log({
+                    "validation_images": wandb.Image(img_pil, caption=f"Epoch {self.current_epoch} Batch {batch_idx}")
+                })
                 print(
                     f"Successfully logged validation images for Epoch {self.current_epoch}, Batch {batch_idx}"
                 )
@@ -459,13 +443,26 @@ class SupResDiffGAN(pl.LightningModule):
         sr_img = self(lr_img)
         elapsed_time = time.perf_counter() - start_time
 
+        per_image_metrics = []
         if batch_idx == 0:
+            for i in range(min(3, lr_img.shape[0])):
+                hr_img_np = hr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
+                sr_img_np = sr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
+                hr_img_np = (hr_img_np + 1) / 2
+                sr_img_np = (sr_img_np + 1) / 2
+                hr_img_np = hr_img_np[: padding_info["hr"][i][1], : padding_info["hr"][i][0], :]
+                sr_img_np = sr_img_np[: padding_info["hr"][i][1], : padding_info["hr"][i][0], :]
+                psnr = peak_signal_noise_ratio(hr_img_np, sr_img_np, data_range=1.0)
+                ssim = structural_similarity(hr_img_np, sr_img_np, channel_axis=-1, data_range=1.0)
+                lpips_val = (self.lpips(hr_img[i: i + 1], sr_img[i: i + 1]).cpu().item())
+                per_image_metrics.append((psnr, ssim, lpips_val))
             img_array = self.plot_images_with_metrics(
                 hr_img,
                 lr_img,
                 sr_img,
                 padding_info,
                 title=f"Test Images: Timesteps {self.diffusion.timesteps}, Posterior {self.diffusion.posterior_type}",
+                per_image_metrics=per_image_metrics
             )
             # Save test images locally
             os.makedirs("outputs/test_images", exist_ok=True)

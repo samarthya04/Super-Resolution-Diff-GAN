@@ -86,15 +86,12 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
             Output tensor with shape (batch_size, channels, height, width).
         """
         with torch.no_grad():
-            x_lat = (
-                self.ae.encode(x).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
+            x_lat = self.ae.encode(x).latents.detach()
 
         x = self.diffusion.sample(self.generator, x_lat, x_lat.shape)
 
         with torch.no_grad():
-            x_out = self.ae.decode(x / self.ae.config.scaling_factor).sample
+            x_out = self.ae.decode(x).sample
         x_out = torch.clamp(x_out, -1, 1)
         return x_out
 
@@ -122,14 +119,8 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
 
         # Going into the latent space
         with torch.no_grad():
-            lr_lat = (
-                self.ae.encode(lr_img).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
-            x0_lat = (
-                self.ae.encode(hr_img).latent_dist.mode().detach()
-                * self.ae.config.scaling_factor
-            )
+            lr_lat = self.ae.encode(lr_img).latents.detach()
+            x0_lat = self.ae.encode(hr_img).latents.detach()
 
         # Forward diffusion process
         timesteps = torch.randint(
@@ -148,7 +139,7 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
 
         # Going back to pixel space
         with torch.no_grad():
-            sr_img = self.ae.decode(x_gen_0 / self.ae.config.scaling_factor).sample
+            sr_img = self.ae.decode(x_gen_0).sample
             sr_img = torch.clamp(sr_img, -1, 1)
 
         if batch_idx % 2 == 0:
@@ -213,11 +204,13 @@ class SupResDiffGAN_simple_gan(pl.LightningModule):
         if batch_idx == 0:
             title = f"Epoch {self.current_epoch}"
             img_array = self.plot_images(hr_img, lr_img, sr_img, padding_info, title)
-            # Save validation images locally
-            os.makedirs("outputs/validation_images", exist_ok=True)
+            # Log validation images to wandb
+            import wandb
             from PIL import Image
             img_pil = Image.fromarray(img_array)
-            img_pil.save(f"outputs/validation_images/epoch_{self.current_epoch}.png")
+            self.logger.experiment.log({
+                "validation_images": wandb.Image(img_pil, caption=f"Epoch {self.current_epoch}")
+            })
 
         # Compute and log metrics
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}

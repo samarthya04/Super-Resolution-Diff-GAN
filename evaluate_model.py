@@ -6,7 +6,7 @@ import pandas as pd
 import torch
 from omegaconf import OmegaConf
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.strategies import DDPStrategy
 
 from scripts.data_loader import train_val_test_loader
@@ -48,13 +48,13 @@ def save_results_to_csv(results: list[dict], filename: str) -> None:
     df.to_csv(new_filename, index=False)
 
 
-def save_bar_charts_locally(
+def log_bar_charts_to_wandb(
     results: list[dict],
     mode: str,
-    save_dir: str = "outputs/charts"
+    logger: WandbLogger
 ) -> None:
     """
-    Save bar charts locally as PNG files.
+    Log bar charts to wandb using wandb.Table and wandb.plot.bar().
 
     Parameters
     ----------
@@ -62,13 +62,10 @@ def save_bar_charts_locally(
         List of dictionaries containing the evaluation results.
     mode : str
         The evaluation mode.
-    save_dir : str
-        Directory to save the charts.
+    logger : WandbLogger
+        Wandb logger instance.
     """
-    import matplotlib.pyplot as plt
-    import os
-    
-    os.makedirs(save_dir, exist_ok=True)
+    import wandb
     
     if mode == "all":
         metrics = {}
@@ -81,15 +78,8 @@ def save_bar_charts_locally(
 
         for metric_name, data in metrics.items():
             keys, values = zip(*data)
-            plt.figure(figsize=(12, 6))
-            plt.bar(keys, values)
-            plt.title(f"{metric_name} - All Configurations")
-            plt.xlabel("Posterior_Step")
-            plt.ylabel(metric_name)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{save_dir}/bar_chart_{metric_name}.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            table = wandb.Table(data=list(zip(keys, values)), columns=["Posterior_Step", metric_name])
+            logger.experiment.log({f"bar_chart_{metric_name}": wandb.plot.bar(table, "Posterior_Step", metric_name, title=f"{metric_name} - All Configurations")})
     else:
         metrics = {}
         for result in results:
@@ -101,18 +91,11 @@ def save_bar_charts_locally(
 
         for metric_name, data in metrics.items():
             keys, values = zip(*data)
-            plt.figure(figsize=(10, 6))
-            plt.bar(keys, values)
-            plt.title(f"{metric_name} - {mode.capitalize()}")
-            plt.xlabel(mode.capitalize())
-            plt.ylabel(metric_name)
-            plt.xticks(rotation=45)
-            plt.tight_layout()
-            plt.savefig(f"{save_dir}/bar_chart_{metric_name}_{mode}.png", dpi=300, bbox_inches='tight')
-            plt.close()
+            table = wandb.Table(data=list(zip(keys, values)), columns=[mode.capitalize(), metric_name])
+            logger.experiment.log({f"bar_chart_{metric_name}_{mode}": wandb.plot.bar(table, mode.capitalize(), metric_name, title=f"{metric_name} - {mode.capitalize()}")})
 
 
-def evaluate_model(cfg, model, trainer: Trainer, test_loader) -> None:
+def evaluate_model(cfg, model, trainer: Trainer, test_loader, logger: WandbLogger) -> None:
     """Evaluate the model based on the specified configuration.
 
     Parameters
@@ -178,7 +161,7 @@ def evaluate_model(cfg, model, trainer: Trainer, test_loader) -> None:
     else:
         raise UnknownModeException()
 
-    save_bar_charts_locally(results, cfg.evaluation.mode)
+    log_bar_charts_to_wandb(results, cfg.evaluation.mode, logger)
 
     if cfg.evaluation.save_results:
         save_results_to_csv(results, cfg.evaluation.results_file)
@@ -211,10 +194,11 @@ def main(cfg) -> None:
 
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
-    logger = TensorBoardLogger(
-        save_dir="logs/tensorboard",
+    logger = WandbLogger(
+        project=cfg.wandb_logger.project,
+        entity=cfg.wandb_logger.entity,
         name=final_model_path.split("/")[-1],
-        log_graph=False,
+        config=config_dict,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -231,7 +215,7 @@ def main(cfg) -> None:
         strategy=DDPStrategy(find_unused_parameters=True),
     )
 
-    evaluate_model(cfg, model, trainer, test_loader)
+    evaluate_model(cfg, model, trainer, test_loader, logger)
 
 
 if __name__ == "__main__":
