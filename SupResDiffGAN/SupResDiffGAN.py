@@ -3,6 +3,7 @@ import pytorch_lightning as pl
 import torch
 import torch.nn as nn
 import os
+import wandb
 from matplotlib import pyplot as plt
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 from torchmetrics.image.lpip import LearnedPerceptualImagePatchSimilarity
@@ -11,6 +12,8 @@ import time
 
 class SupResDiffGAN(pl.LightningModule):
     """SupResDiffGAN class for Super-Resolution Diffusion Generative Adversarial Network.
+
+    This model combines the best features from both the samarthya04 and dawir7 repositories.
 
     Parameters
     ----------
@@ -52,7 +55,7 @@ class SupResDiffGAN(pl.LightningModule):
 
         self.vgg_loss = vgg_loss
         self.content_loss = nn.MSELoss()
-        self.adversarial_loss = nn.BCEWithLogitsLoss()  # Updated for mixed precision
+        self.adversarial_loss = nn.BCEWithLogitsLoss()  # From samarthya04 for numerical stability
         self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex").to(
             self.device
         )
@@ -65,7 +68,7 @@ class SupResDiffGAN(pl.LightningModule):
         for param in self.ae.parameters():
             param.requires_grad = False
 
-        self.automatic_optimization = False  # Disable automatic optimization
+        self.automatic_optimization = False
 
         self.test_step_outputs = []
         self.ema_weight = 0.97
@@ -73,49 +76,36 @@ class SupResDiffGAN(pl.LightningModule):
         self.s = 0
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the SupResDiffGAN model.
-
-        Parameters
-        ----------
-        x : torch.Tensor
-            Input tensor with shape (batch_size, channels, height, width).
-
-        Returns
-        -------
-        torch.Tensor
-            Output tensor with shape (batch_size, channels, height, width).
-        """
+        """Forward pass of the SupResDiffGAN model."""
         with torch.no_grad():
-            x_lat = self.ae.encode(x).latents.detach()
+            x_lat = (
+                self.ae.encode(x).latents.detach()
+                * self.ae.scaling_factor
+            )
+
         x = self.diffusion.sample(self.generator, x_lat, x_lat.shape)
+
         with torch.no_grad():
-            x_out = self.ae.decode(x).sample
+            x_out = self.ae.decode(x / self.ae.scaling_factor).sample
         x_out = torch.clamp(x_out, -1, 1)
         return x_out
 
     def training_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> dict[str, torch.Tensor]:
-        """Training step for the SupResDiffGAN model.
-
-        Parameters
-        ----------
-        batch : tuple of torch.Tensor
-            Batch of data containing low-resolution and high-resolution images.
-        batch_idx : int
-            Index of the batch.
-
-        Returns
-        -------
-        dict
-            Dictionary containing the generator and discriminator losses.
-        """
+        """Training step for the SupResDiffGAN model."""
         lr_img, hr_img = batch["lr"], batch["hr"]
         optimizer_g, optimizer_d = self.optimizers()
 
         with torch.no_grad():
-            lr_lat = self.ae.encode(lr_img).latents.detach()
-            x0_lat = self.ae.encode(hr_img).latents.detach()
+            lr_lat = (
+                self.ae.encode(lr_img).latents.detach()
+                * self.ae.scaling_factor
+            )
+            x0_lat = (
+                self.ae.encode(hr_img).latents.detach()
+                * self.ae.scaling_factor
+            )
 
         timesteps = torch.randint(
             0,
@@ -136,9 +126,10 @@ class SupResDiffGAN(pl.LightningModule):
         x_gen_s = self.diffusion.forward(x_gen_0, s_tensor)
 
         with torch.no_grad():
-            sr_img = torch.clamp(self.ae.decode(x_gen_0).sample, -1, 1)
-            hr_s_img = torch.clamp(self.ae.decode(x_s).sample, -1, 1)
-            sr_s_img = torch.clamp(self.ae.decode(x_gen_s).sample, -1, 1)
+            sr_img = torch.clamp(self.ae.decode(x_gen_0 / self.ae.scaling_factor).sample, -1, 1)
+            hr_s_img = torch.clamp(self.ae.decode(x_s / self.ae.scaling_factor).sample, -1, 1)
+            sr_s_img = torch.clamp(self.ae.decode(x_gen_s / self.ae.scaling_factor).sample, -1, 1)
+
 
         if batch_idx % 2 == 0:
             # Generator training
@@ -178,22 +169,13 @@ class SupResDiffGAN(pl.LightningModule):
     def validation_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> None:
-        """Validation step for the SupResDiffGAN model.
-
-        Parameters
-        ----------
-        batch : tuple of torch.Tensor
-            Batch of data containing low-resolution and high-resolution images.
-        batch_idx : int
-            Index of the batch.
-        """
+        """Validation step for the SupResDiffGAN model."""
         lr_img, hr_img = batch["lr"], batch["hr"]
         lr_img, hr_img = lr_img.to(self.device), hr_img.to(self.device)
         sr_img = self(lr_img)
         padding_info = {"lr": batch["padding_data_lr"],
                         "hr": batch["padding_data_hr"]}
 
-        # Enhanced visualization for the first batch only (for speed)
         if batch_idx < 1:
             print(
                 f"Generating validation images for Epoch {self.current_epoch}, Batch {batch_idx}..."
@@ -201,7 +183,6 @@ class SupResDiffGAN(pl.LightningModule):
             try:
                 title = f"Validation Epoch {self.current_epoch} - Batch {batch_idx}"
                 per_image_metrics = []
-                # Limit to 3 samples max (for speed)
                 for i in range(min(3, lr_img.shape[0])):
                     hr_img_np = hr_img[i].detach(
                     ).cpu().numpy().transpose(1, 2, 0)
@@ -222,22 +203,15 @@ class SupResDiffGAN(pl.LightningModule):
                     )
                     lpips_val = (
                         self.lpips(hr_img[i: i + 1],
-                                   sr_img[i: i + 1]).cpu().item()
+                                  sr_img[i: i + 1]).cpu().item()
                     )
                     per_image_metrics.append((psnr, ssim, lpips_val))
 
                 img_array = self.plot_images_with_metrics(
                     hr_img, lr_img, sr_img, padding_info, title, per_image_metrics
                 )
-                avg_metrics = [
-                    np.mean([m[i] for m in per_image_metrics]) for i in range(3)
-                ]
-                # Log validation images to wandb
-                import wandb
-                from PIL import Image
-                img_pil = Image.fromarray(img_array)
                 self.logger.experiment.log({
-                    "validation_images": wandb.Image(img_pil, caption=f"Epoch {self.current_epoch} Batch {batch_idx}")
+                    "validation_images": wandb.Image(img_array, caption=f"Epoch {self.current_epoch} Batch {batch_idx}")
                 })
                 print(
                     f"Successfully logged validation images for Epoch {self.current_epoch}, Batch {batch_idx}"
@@ -246,12 +220,10 @@ class SupResDiffGAN(pl.LightningModule):
                 print(
                     f"Visualization error for Epoch {self.current_epoch}, Batch {batch_idx}: {str(e)}"
                 )
-                # Log validation error to file
                 os.makedirs("outputs/logs", exist_ok=True)
                 with open("outputs/logs/validation_errors.txt", "a") as f:
                     f.write(f"Epoch {self.current_epoch} Batch {batch_idx}: {str(e)}\n")
 
-        # Compute and log metrics
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}
         for i in range(lr_img.shape[0]):
             hr_img_np = hr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
@@ -275,42 +247,12 @@ class SupResDiffGAN(pl.LightningModule):
             metrics["MSE"].append(mse)
 
         lpips = self.lpips(hr_img, sr_img).cpu().item()
-        self.log(
-            "val/PSNR",
-            np.mean(metrics["PSNR"]),
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "val/SSIM",
-            np.mean(metrics["SSIM"]),
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "val/MSE",
-            np.mean(metrics["MSE"]),
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "val/LPIPS",
-            lpips,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log_dict({
+            "val/PSNR": np.mean(metrics["PSNR"]),
+            "val/SSIM": np.mean(metrics["SSIM"]),
+            "val/MSE": np.mean(metrics["MSE"]),
+            "val/LPIPS": lpips
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
 
     def plot_images_with_metrics(
         self,
@@ -321,37 +263,10 @@ class SupResDiffGAN(pl.LightningModule):
         title: str,
         per_image_metrics: list,
     ) -> np.ndarray:
-        """Enhanced plotting method with per-image metrics overlaid.
-
-        Plots 5 random triples of HR/LR/SR images with PSNR/SSIM/LPIPS metrics as subtitles.
-        Returns a single array for W&B logging.
-
-        Parameters
-        ----------
-        hr_img : torch.Tensor
-            High-resolution images.
-        lr_img : torch.Tensor
-            Low-resolution images.
-        sr_img : torch.Tensor
-            Super-resolved images.
-        padding_info : dict
-            Padding information.
-        title : str
-            Plot title.
-        per_image_metrics : list
-            List of (PSNR, SSIM, LPIPS) tuples for each image.
-
-        Returns
-        -------
-        np.ndarray
-            Plotted image array.
-        """
         fig, axs = plt.subplots(
             3, 3, figsize=(9, 9), dpi=100
-        )  # Smaller for speed
+        )
         fig.suptitle(title, fontsize=14, fontweight="bold", color="white")
-
-        # Set background to dark for better contrast with W&B themes
         fig.patch.set_facecolor("#1e1e1e")
         for ax in axs.flat:
             ax.set_facecolor("#2e2e2e")
@@ -360,7 +275,6 @@ class SupResDiffGAN(pl.LightningModule):
             num = np.random.randint(0, len(per_image_metrics))
             psnr, ssim, lpips_val = per_image_metrics[num]
 
-            # Normalize and clip images
             sr_img_plot = (
                 torch.clamp(sr_img[num], -1,
                             1).cpu().float().numpy().transpose(1, 2, 0)
@@ -382,12 +296,6 @@ class SupResDiffGAN(pl.LightningModule):
                 : padding_info["lr"][num][1], : padding_info["lr"][num][0], :
             ]
 
-            # Convert to uint8
-            sr_img_plot = (sr_img_plot * 255).astype(np.uint8)
-            hr_img_true = (hr_img_true * 255).astype(np.uint8)
-            lr_img_true = (lr_img_true * 255).astype(np.uint8)
-
-            # Plot with enhanced styling
             axs[0, i].imshow(hr_img_true)
             axs[0, i].set_title("HR Ground Truth", fontsize=9, color="white")
             axs[0, i].set_xticks([])
@@ -408,7 +316,6 @@ class SupResDiffGAN(pl.LightningModule):
             axs[2, i].set_xticks([])
             axs[2, i].set_yticks([])
 
-        # Tight layout and convert to image
         plt.tight_layout(pad=0.5)
         fig.canvas.draw()
         img_array = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
@@ -420,20 +327,6 @@ class SupResDiffGAN(pl.LightningModule):
     def test_step(
         self, batch: tuple[torch.Tensor, torch.Tensor], batch_idx: int
     ) -> dict:
-        """Test step for the SupResDiffGAN model, for model evaluation.
-
-        Parameters
-        ----------
-        batch : tuple of torch.Tensor
-            Batch of data containing low-resolution and high-resolution images.
-        batch_idx : int
-            Index of the batch.
-
-        Returns
-        -------
-        dict
-            Dictionary containing the metrics for the batch.
-        """
         lr_img, hr_img = batch["lr"], batch["hr"]
         lr_img, hr_img = lr_img.to(self.device), hr_img.to(self.device)
         padding_info = {"lr": batch["padding_data_lr"],
@@ -443,8 +336,8 @@ class SupResDiffGAN(pl.LightningModule):
         sr_img = self(lr_img)
         elapsed_time = time.perf_counter() - start_time
 
-        per_image_metrics = []
         if batch_idx == 0:
+            per_image_metrics = []
             for i in range(min(3, lr_img.shape[0])):
                 hr_img_np = hr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
                 sr_img_np = sr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
@@ -456,6 +349,7 @@ class SupResDiffGAN(pl.LightningModule):
                 ssim = structural_similarity(hr_img_np, sr_img_np, channel_axis=-1, data_range=1.0)
                 lpips_val = (self.lpips(hr_img[i: i + 1], sr_img[i: i + 1]).cpu().item())
                 per_image_metrics.append((psnr, ssim, lpips_val))
+
             img_array = self.plot_images_with_metrics(
                 hr_img,
                 lr_img,
@@ -464,11 +358,13 @@ class SupResDiffGAN(pl.LightningModule):
                 title=f"Test Images: Timesteps {self.diffusion.timesteps}, Posterior {self.diffusion.posterior_type}",
                 per_image_metrics=per_image_metrics
             )
-            # Save test images locally
             os.makedirs("outputs/test_images", exist_ok=True)
             from PIL import Image
             img_pil = Image.fromarray(img_array)
             img_pil.save(f"outputs/test_images/test_results_timesteps_{self.diffusion.timesteps}_posterior_{self.diffusion.posterior_type}.png")
+            self.logger.experiment.log(
+                {"test_images": wandb.Image(img_pil, caption="Test Images")}
+            )
 
         metrics = {"PSNR": [], "SSIM": [], "MSE": []}
         for i in range(lr_img.shape[0]):
@@ -511,57 +407,18 @@ class SupResDiffGAN(pl.LightningModule):
         avg_lpips = np.mean([x["LPIPS"] for x in self.test_step_outputs])
         avg_time = np.mean([x["time"] for x in self.test_step_outputs])
 
-        self.log(
-            "test/PSNR",
-            avg_psnr,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "test/SSIM",
-            avg_ssim,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "test/MSE",
-            avg_mse,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "test/LPIPS",
-            avg_lpips,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "test/time",
-            avg_time,
-            on_epoch=True,
-            on_step=False,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log_dict({
+            "test/PSNR": avg_psnr,
+            "test/SSIM": avg_ssim,
+            "test/MSE": avg_mse,
+            "test/LPIPS": avg_lpips,
+            "test/time": avg_time,
+        }, on_epoch=True, prog_bar=True, logger=True, sync_dist=True)
         self.test_step_outputs.clear()
 
     def discriminator_loss(
         self, hr_s_img: torch.Tensor, sr_s_img: torch.Tensor
     ) -> torch.Tensor:
-        """Compute the discriminator loss."""
         y = torch.randint(0, 2, (hr_s_img.shape[0],), device=hr_s_img.device)
         y = y.view(-1, 1, 1, 1)
         y_expanded = y.expand(
@@ -584,7 +441,6 @@ class SupResDiffGAN(pl.LightningModule):
         hr_s_img: torch.Tensor,
         sr_s_img: torch.Tensor,
     ) -> torch.Tensor:
-        """Compute the generator loss."""
         content_loss = self.content_loss(x_gen, x0)
         perceptual_loss = (
             self.vgg_loss(sr_img, hr_img) if self.vgg_loss is not None else 0
@@ -639,7 +495,6 @@ class SupResDiffGAN(pl.LightningModule):
     def configure_optimizers(
         self,
     ) -> tuple[torch.optim.Optimizer, torch.optim.Optimizer]:
-        """Configure optimizers for the generator and discriminator."""
         opt_g = torch.optim.Adam(
             self.generator.parameters(), lr=self.lr, betas=self.betas
         )
@@ -649,7 +504,6 @@ class SupResDiffGAN(pl.LightningModule):
         return [opt_g, opt_d]
 
     def calculate_ema_noise_step(self, pred: torch.Tensor, y: torch.Tensor) -> None:
-        """Calculate the Exponential Moving Average (EMA) noise step."""
         pred_binary = (torch.sigmoid(pred) > 0.5).float()
         acc = (pred_binary == y).float().mean().cpu().item()
         self.ema_mean = acc * (1 - self.ema_weight) + \
@@ -662,21 +516,7 @@ class SupResDiffGAN(pl.LightningModule):
                 self.diffusion.timesteps - 1,
             ).item()
         )
-        self.log(
-            "train/ema_noise_step",
-            self.s,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
-        self.log(
-            "train/ema_accuracy",
-            acc,
-            on_step=False,
-            on_epoch=True,
-            prog_bar=True,
-            logger=True,
-            sync_dist=True,
-        )
+        self.log_dict({
+            "train/ema_noise_step": self.s,
+            "train/ema_accuracy": acc,
+        }, on_epoch=True, logger=True, sync_dist=True)

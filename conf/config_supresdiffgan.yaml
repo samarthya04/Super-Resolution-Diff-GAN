@@ -17,7 +17,7 @@ trainer:
   precision: 16
   accelerator: 'gpu'
   devices: 1
-  resume_from_checkpoint: 'models/checkpoints/SupResDiffGAN-epoch=109-val/LPIPS=0.160.ckpt'
+  resume_from_checkpoint: null
 
 dataset:
   name: 'celeb'

@@ -10,6 +10,27 @@ import numpy as np
 import math
 
 
+class ResizeByScale:
+    """
+    A callable class to resize an image by a given scaling factor.
+    This is used as a transform and is pickle-able for multiprocessing.
+    """
+    def __init__(self, scale):
+        self.scale = scale
+        self.interpolation = transforms.InterpolationMode.BILINEAR
+
+    def __call__(self, img: Image) -> Image:
+        """
+        Resizes the input image.
+        """
+        new_size = (int(img.height * self.scale), int(img.width * self.scale))
+        return transforms.functional.resize(
+            img,
+            new_size,
+            interpolation=self.interpolation,
+        )
+
+
 class PairedImagesDataset(Dataset):
     """A PyTorch Dataset for loading paired images from directories.
 
@@ -124,36 +145,12 @@ class PairedImagesDataModule(pl.LightningDataModule):
         if self.cfg.dataset.resize:
             self.transform_hr = transforms.Compose(transform_list)
 
-            resize = transforms.Lambda(
-                lambda img: self.resize_by_scale(img, self.scale)
-            )
+            resize = ResizeByScale(self.scale) # Use the callable class
             transfer_list_lr = [resize] + transform_list
             self.transform_lr = transforms.Compose(transfer_list_lr)
         else:
             self.transform_hr = transforms.Compose(transform_list)
             self.transform_lr = transforms.Compose(transform_list)
-
-    def resize_by_scale(self, img: Image, scale: float) -> Image:
-        """Resize an image by a given scaling factor.
-
-        Parameters
-        ----------
-        img : PIL.Image
-            The image to be resized.
-        scale : float
-            The scaling factor to resize the image.
-
-        Returns
-        -------
-        PIL.Image
-            The resized image.
-        """
-        new_size = (int(img.height * scale), int(img.width * scale))
-        return transforms.functional.resize(
-            img,
-            new_size,
-            interpolation=transforms.InterpolationMode.BILINEAR,
-        )
 
     def setup(self, stage=None, val_split=0.3):
         """Prepare the datasets for the given stage.
