@@ -19,9 +19,9 @@ This implementation is built using **PyTorch** and **PyTorch Lightning**, with c
 ## 🌟 Results Showcase
 Below is an example of the model's performance, upscaling a low-resolution image from the CelebA dataset after being trained.
 
-<p align="center">
+<!-- <p align="center">
   Left: Low-Resolution Input &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Right: Vision Weaver Super-Resolution Output
-</p>
+</p> -->
 
 ## 📋 Table of Contents
 - ✨ Key Features
@@ -54,16 +54,17 @@ Below is an example of the model's performance, upscaling a low-resolution image
 ### Installation
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/vision-weaver.git
-   cd vision-weaver
+   git clone https://github.com/samarthya04/Super-Resolution-Diff-GAN.git
+   cd Super-Resolution-Diff-GAN
    ```
 2. Create and activate a virtual environment:
    ```bash
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   conda create -n SupResDiffGAN_env python=3.10
+   conda activate SupResDiffGAN_env
    ```
 3. Install the required dependencies:
    ```bash
+   pip install -r requirements-data.txt
    pip install -r requirements-gpu.txt
    ```
 4. Log in to Weights & Biases:
@@ -88,7 +89,7 @@ bash get_data.sh -c
 ### Training
 The project is configured for a high-quality training run that is optimized for modern GPUs. To start training with the recommended "Maximum Quality" configuration, run the following command:
 ```bash
-python train_model.py -cn "config_supresdiffgan_max_quality"
+python train_model.py -cn "config_supresdiffgan"
 ```
 - Progress will be displayed in the terminal and logged to your Weights & Biases project.
 - The best performing model checkpoint will be saved in the `models/checkpoints/` directory, based on the `val/LPIPS` metric.
@@ -107,7 +108,7 @@ After training is complete, you can evaluate your best model on the test set.
 ## ⚙️ Configuration
 All aspects of the project are controlled by `.yaml` files located in the `conf/` directory. The main configuration entry point is `config.yaml`, which can be overridden by more specific files.
 
-- `config_supresdiffgan_max_quality.yaml`: The recommended file for training a high-performance model.
+- `config_supresdiffgan.yaml`: The recommended file for training a high-performance model.
 - `config_supresdiffgan_evaluation.yaml`: A pre-configured file for running final model evaluation.
 
 You can modify these files or create new ones to experiment with different hyperparameters, such as:
