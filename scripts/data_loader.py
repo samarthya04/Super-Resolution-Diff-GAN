@@ -253,6 +253,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
             shuffle=True,
             num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_cropping_fn,
+            persistent_workers=True
         )
 
     def val_dataloader(self):
@@ -268,6 +269,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_padding_fn,
+            persistent_workers=True
         )
 
     def test_dataloader(self):
@@ -283,6 +285,7 @@ class PairedImagesDataModule(pl.LightningDataModule):
             batch_size=self.batch_size,
             num_workers=min(8, os.cpu_count()),
             collate_fn=self.collate_padding_fn,
+            persistent_workers=True
         )
 
     def collate_cropping_fn(self, batch):

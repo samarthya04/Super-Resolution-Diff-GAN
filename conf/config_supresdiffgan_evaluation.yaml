@@ -1,0 +1,77 @@
+# This configuration is set up for evaluating a trained model.
+# The `evaluate_model.py` script will use this file.
+
+mode: 'test'
+use_perceptual_loss: false
+
+model:
+  name: 'SupResDiffGAN'
+  lr: 0.0001
+  alfa_perceptual: 0.001
+  alfa_adv: 0.005
+  # CRITICAL: Path to the best trained model checkpoint.
+  # Please verify this path points to your final .ckpt file.
+  load_model: "models/checkpoints/SupResDiffGAN-epoch=214-val/LPIPS=0.173.ckpt"
+
+trainer:
+  # Training-specific parameters are not used in evaluation mode.
+  precision: 16
+  accelerator: 'gpu'
+  devices: 1
+
+dataset:
+  name: 'celeb'
+  batch_size: 32  # Batch size for evaluation
+  resize: true
+  scale: 4
+
+evaluation:
+  # 'all' will test every combination of steps and posteriors.
+  # Other options: 'steps' or 'posterior'
+  mode: 'all'
+  steps:
+    - 50
+    - 100
+    - 200
+    - 500
+  posteriors:
+    - 'ddpm'
+    - 'ddim'
+  save_results: true
+  results_file: 'evaluation_results/final_evaluation_results.csv'
+
+checkpoint:
+  # These settings are for saving checkpoints during training and are not used in evaluation.
+  monitor: 'val/LPIPS'
+  dirpath: 'models/checkpoints/'
+  save_top_k: 1
+  mode: 'min'
+  filename: 'SupResDiffGAN-{epoch:02d}-{val_LPIPS:.3f}'
+
+autoencoder: 'VAE'
+feature_extractor: true
+
+unet:
+  - 32
+  - 32
+  - 64
+  - 64
+
+diffusion:
+  timesteps: 50
+  beta_type: 'cosine'
+  posterior_type: 'ddpm'
+  validation_timesteps: 25
+  validation_posterior_type: 'ddim'
+
+discriminator:
+  in_channels: 6
+  channels:
+    - 32
+    - 32
+    - 64
+
+wandb_logger:
+  project: 'SupResDiffGAN' # your wandb project
+  entity: 'samarthya04-kiit-deemed-to-be-university'
+

@@ -6,18 +6,18 @@ model:
   lr: 0.0001
   alfa_perceptual: 0.001
   alfa_adv: 0.005
-  load_model: null
+  load_model: 'models\SupResDiffGAN_celeb_14.pth'
 
 trainer:
-  max_epochs: 200
+  max_epochs: 250
   max_steps: -1
-  check_val_every_n_epoch: 10
+  check_val_every_n_epoch: 5
   limit_val_batches: 0.05
   log_every_n_steps: 100
   precision: 16
   accelerator: 'gpu'
   devices: 1
-  resume_from_checkpoint: null
+  resume_from_checkpoint: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.175-v1.ckpt"
 
 dataset:
   name: 'celeb'
