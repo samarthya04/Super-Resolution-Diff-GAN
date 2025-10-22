@@ -11,7 +11,7 @@ model:
   alfa_adv: 0.005
   # CRITICAL: Path to the best trained model checkpoint.
   # Please verify this path points to your final .ckpt file.
-  load_model: "models/checkpoints/SupResDiffGAN-epoch=214-val/LPIPS=0.173.ckpt"
+  load_model: "models/checkpoints/SupResDiffGAN-epoch=214-val/LPIPS=0.144.ckpt"
 
 trainer:
   # Training-specific parameters are not used in evaluation mode.
@@ -30,7 +30,6 @@ evaluation:
   # Other options: 'steps' or 'posterior'
   mode: 'all'
   steps:
-    - 50
     - 100
     - 200
     - 500
@@ -52,10 +51,10 @@ autoencoder: 'VAE'
 feature_extractor: true
 
 unet:
-  - 32
-  - 32
   - 64
   - 64
+  - 128
+  - 128
 
 diffusion:
   timesteps: 50
@@ -67,9 +66,9 @@ diffusion:
 discriminator:
   in_channels: 6
   channels:
-    - 32
-    - 32
     - 64
+    - 64
+    - 128
 
 wandb_logger:
   project: 'SupResDiffGAN' # your wandb project
