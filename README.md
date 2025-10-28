@@ -1,131 +1,230 @@
 # Vision Weaver: A SupResDiffGAN Implementation
 
 <div align="center">
-  <p><strong>Fusing Diffusion Transformers and GANs for High-Fidelity Super-Resolution</strong></p>
+  <p><strong>Fusing Latent Diffusion and GANs for High-Fidelity Super-Resolution</strong></p>
 </div>
 
 <div align="center">
   <a href="https://www.python.org/"><img src="https://img.shields.io/badge/Python-3.9%2B-blue?logo=python" alt="Python"></a>
-  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.0%2B-ee4c2c?logo=pytorch" alt="PyTorch"></a>
-  <a href="https://www.pytorchlightning.ai/"><img src="https://img.shields.io/badge/PyTorch%20Lightning-2.2-792ee5?logo=pytorch-lightning" alt="PyTorch Lightning"></a>
+  <a href="https://pytorch.org/"><img src="https://img.shields.io/badge/PyTorch-2.2%2B-ee4c2c?logo=pytorch" alt="PyTorch"></a>
+  <a href="https://lightning.ai/docs/pytorch/stable/"><img src="https://img.shields.io/badge/PyTorch%20Lightning-2.2%2B-792ee5?logo=pytorch-lightning" alt="PyTorch Lightning"></a>
   <a href="https://hydra.cc/"><img src="https://img.shields.io/badge/Config-Hydra-89b8cd" alt="Hydra"></a>
   <a href="https://wandb.ai/"><img src="https://img.shields.io/badge/Logged-W%26B-yellowgreen" alt="Weights & Biases"></a>
 </div>
 
-Vision Weaver is a high-quality implementation of the research paper *"SupResDiffGAN: A New Approach for the Super-Resolution Task"* by Kopeć et al. [cite: SupResDiffGAN-Paper.pdf]. This project leverages a hybrid architecture that combines the strengths of Denoising Diffusion Models and Generative Adversarial Networks (GANs) to perform image super-resolution. By operating in the latent space of a pre-trained autoencoder, the model achieves a compelling balance between the exceptional perceptual quality of diffusion models and the inference speed of GANs.
+**Vision Weaver** is a super-resolution project implementing a hybrid architecture inspired by **SupResDiffGAN**, combining **Denoising Diffusion Models** and **Generative Adversarial Networks (GANs)**. By performing diffusion in the **latent space** of a pre-trained tiny autoencoder, the model achieves a balance between **perceptual quality** (from diffusion) and **inference efficiency** (closer to GANs).
 
-This implementation is built using **PyTorch** and **PyTorch Lightning**, with configuration managed by **Hydra** and experiment tracking integrated with **Weights & Biases**.
+This implementation uses:
+- **PyTorch** & **PyTorch Lightning**
+- **Hydra** for configuration
+- **Weights & Biases** for experiment tracking
 
-## 🌟 Results Showcase
-Below is an example of the model's performance, upscaling a low-resolution image from the CelebA dataset after being trained.
+---
 
-<!-- <p align="center">
-  Left: Low-Resolution Input &nbsp;&nbsp;&nbsp;|&nbsp;&nbsp;&nbsp; Right: Vision Weaver Super-Resolution Output
-</p> -->
+<!--## Results Showcase
 
-## 📋 Table of Contents
-- ✨ Key Features
-- 🛠️ Getting Started
-  - Prerequisites
-  - Installation
-- 📂 Datasets
-- ▶️ Usage
-  - Training
-  - Evaluation
-- ⚙️ Configuration
-- 🏢 Model Architecture
-- 🙏 Acknowledgement
-- 📜 License
+*(Placeholder: Replace with your best visual results after evaluation)*
 
-## ✨ Key Features
-- **Hybrid Generative Model**: Implements the SupResDiffGAN architecture, which fuses a U-Net based diffusion generator with a patch-based adversarial discriminator for state-of-the-art results.
-- **Latent Space Diffusion**: Performs the computationally intensive diffusion process in the compressed latent space of a tiny autoencoder, enabling fast training and inference.
-- **Flexible Configuration**: Utilizes Hydra for comprehensive experiment management. All model, trainer, and dataset parameters are defined in easily editable `.yaml` files.
-- **Experiment Tracking**: Integrated with Weights & Biases (wandb) for real-time logging of metrics, validation images, and performance charts.
-- **Modular Codebase**: Built with PyTorch Lightning, ensuring a clean separation of model logic (`SupResDiffGAN.py`), data handling (`scripts/data_loader.py`), and training/evaluation scripts (`train_model.py`, `evaluate_model.py`).
+<div align="center">
+  <img src="https://via.placeholder.com/800x300.png?text=Sample+Super-Resolution+Results" alt="Sample Results" />
+  <p><i>↑ LR (Left) | SR (Right) ↑</i></p>
+</div>
+-->
 
-## 🛠️ Getting Started
+## Table of Contents
+
+- [Key Features](#-key-features)
+- [Evaluation Results](#-evaluation-results)
+- [Getting Started](#️-getting-started)
+  - [Prerequisites](#prerequisites)
+  - [Installation](#installation)
+- [Datasets](#-datasets)
+- [Usage](#️-usage)
+  - [Training / Fine-tuning](#training--fine-tuning)
+  - [Evaluation](#evaluation)
+- [Configuration](#️-configuration)
+- [Model Architecture](#-model-architecture)
+- [Acknowledgements](#-acknowledgements)
+- [License](#-license)
+
+---
+
+## Key Features
+
+- **Hybrid Generative Model**: Combines U-Net diffusion generator + patch-based adversarial discriminator.
+- **Latent Space Diffusion**: Efficient inference via compressed latent space using `AutoencoderTiny`.
+- **Flexible Configuration**: Hydra-powered `.yaml` configs in `conf/`.
+- **Experiment Tracking**: Full integration with **Weights & Biases** (metrics, images, charts).
+- **Modular Design**: Clean separation of model, data, and training logic using PyTorch Lightning.
+- **Adaptive Noise Scheduling**: EMA-based noise step adaptation for stable GAN training.
+
+---
+
+## Evaluation Results
+
+*Evaluated on the **CelebA-HQ test set** with the checkpoint `epoch=204`.*
+
+| Posterior | Steps | PSNR ↑ | SSIM ↑ | LPIPS ↓ | MSE ↓          | Time (s/batch) ↓ |
+|-----------|-------|--------|--------|---------|----------------|------------------|
+| DDPM      | 50    | **26.227** | **0.750** | **0.1452** | **0.002560** | **1.28** |
+| DDPM      | 100   | 26.136 | 0.748 | 0.1457 | 0.002613 | 2.45 |
+| DDPM      | 200   | 26.055 | 0.746 | 0.1465 | 0.002661 | 5.44 |
+| DDIM      | 50    | 26.236 | 0.748 | 0.1453 | 0.002555 | 1.52 |
+| DDIM      | 100   | 26.205 | 0.748 | **0.1452** | 0.002574 | 2.49 |
+| DDIM      | 200   | 26.176 | 0.747 | **0.1452** | 0.002590 | 4.73 |
+
+> **Source:** `evaluation/final_evaluation.csv` (generated by `evaluate_model.py`).  
+> Numbers are rounded to 4 decimal places for readability; bold highlights the best per-column value.
+
+---
+
+## Getting Started
 
 ### Prerequisites
-- **Python 3.9+**
-- An NVIDIA GPU with CUDA support is highly recommended for training.
-- A Kaggle account and `kaggle.json` API token for downloading datasets.
+
+- **Python**: `3.9+` (tested on `3.10`)
+- **Conda** (recommended)
+- **NVIDIA GPU** with CUDA
+- **Kaggle Account & API Token** → place `kaggle.json` in:
+  - Linux/WSL: `~/.kaggle/`
+  - Windows: `C:\Users\<Your-Username>\.kaggle\`
 
 ### Installation
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/samarthya04/Super-Resolution-Diff-GAN.git
-   cd Super-Resolution-Diff-GAN
-   ```
-2. Create and activate a virtual environment:
-   ```bash
-   conda create -n SupResDiffGAN_env python=3.10
-   conda activate SupResDiffGAN_env
-   ```
-3. Install the required dependencies:
-   ```bash
-   pip install -r requirements-data.txt
-   pip install -r requirements-gpu.txt
-   ```
-4. Log in to Weights & Biases:
-   ```bash
-   wandb login
-   ```
-   You will be prompted to enter your API key.
 
-## 📂 Datasets
-The project includes a shell script to automate the download and preparation of common super-resolution datasets.
+```bash
+# 1. Clone the repository
+git clone https://github.com/samarthya04/Super-Resolution-Diff-GAN.git
+cd Super-Resolution-Diff-GAN
 
-- **CelebA-HQ**: This is the primary dataset used for training the provided configurations.
-- Other datasets like ImageNet, DIV2K, etc., are also supported.
+# 2. Create and activate conda environment
+conda create -n SR_env python=3.10
+conda activate SR_env
 
-To download the CelebA dataset, run the following command. You will need to have your `kaggle.json` file placed in `~/.kaggle/` (for Linux) or `C:\Users\<Your-Username>\.kaggle\` (for Windows).
+# 3. Install dependencies
+pip install -r requirements-data.txt
+pip install -r requirements-gpu.txt
+
+# 4. Login to Weights & Biases
+wandb login
+```
+
+> Ensure your CUDA version matches the PyTorch build in `requirements-gpu.txt`.
+
+---
+
+## Datasets
+
+This project uses **CelebA-HQ**. A script automates download and preprocessing.
+
 ```bash
 bash get_data.sh -c
 ```
 
-## ▶️ Usage
+This will:
+- Download CelebA-HQ via Kaggle
+- Unzip and split into `train`/`val`/`test`
+- Generate **LR images** via bicubic downsampling
+- Save under `data/celeb/`
 
-### Training
-The project is configured for a high-quality training run that is optimized for modern GPUs. To start training with the recommended "Maximum Quality" configuration, run the following command:
+---
+
+## Usage
+
+### Training / Fine-tuning
+
 ```bash
-python train_model.py -cn "config_supresdiffgan"
+python train_model.py -cn config_supresdiffgan
 ```
-- Progress will be displayed in the terminal and logged to your Weights & Biases project.
-- The best performing model checkpoint will be saved in the `models/checkpoints/` directory, based on the `val/LPIPS` metric.
+
+#### To **resume** or **fine-tune**:
+
+1. Edit `conf/config_supresdiffgan.yaml`:
+   ```yaml
+   mode: 'train-test'
+   model:
+     load_model: null  # or path to .ckpt
+   trainer:
+     resume_from_checkpoint: "models/checkpoints/your-best.ckpt"
+   ```
+2. Lower `model.lr` (e.g., `1e-5`) and adjust `trainer.max_epochs`.
+3. Run:
+   ```bash
+   python train_model.py -cn config_supresdiffgan
+   ```
+
+> Checkpoints saved in `models/checkpoints/` (best + last).
+
+---
 
 ### Evaluation
-After training is complete, you can evaluate your best model on the test set.
 
-1. Update the evaluation config: Open `conf/config_supresdiffgan_evaluation.yaml` and ensure that the `load_model` path points to your best checkpoint file (e.g., `models/checkpoints/SupResDiffGAN_Max_Quality-epoch=XX-val_LPIPS=0.XX.ckpt`).
-2. Run the evaluation script:
-   ```bash
-   python evaluate_model.py
+```bash
+python evaluate_model.py -cn config_supresdiffgan
+```
+
+#### Before running:
+1. Open `conf/config_supresdiffgan.yaml`
+2. Set:
+   ```yaml
+   model:
+     load_model: "models/checkpoints/<your best checkpoint>.ckpt"
+   evaluation:
+     steps: [50, 100, 200]
+     posteriors: ["DDPM", "DDIM"]
+     results_file: "evaluation/final_evaluation.csv"
    ```
-- The script will run a comprehensive evaluation with different samplers and step counts, as defined in the config.
-- Results will be saved to a `.csv` file in the `evaluation_results/` directory, and performance charts will be logged to Weights & Biases.
 
-## ⚙️ Configuration
-All aspects of the project are controlled by `.yaml` files located in the `conf/` directory. The main configuration entry point is `config.yaml`, which can be overridden by more specific files.
+> Outputs: Console, CSV, W&B bar charts.
 
-- `config_supresdiffgan.yaml`: The recommended file for training a high-performance model.
-- `config_supresdiffgan_evaluation.yaml`: A pre-configured file for running final model evaluation.
+---
 
-You can modify these files or create new ones to experiment with different hyperparameters, such as:
-- Model architecture (unet, discriminator channels)
-- Batch size and learning rate
-- Loss weights (`alfa_adv`, `alfa_perceptual`)
-- Diffusion timesteps
+## Configuration
 
-## 🏢 Model Architecture
-The Vision Weaver implementation follows the SupResDiffGAN architecture:
-- **Encoder**: A pre-trained VAE encoder compresses the low-resolution and high-resolution images into latent representations.
-- **U-Net Generator**: A U-Net model performs a denoising diffusion process in the latent space to generate a super-resolved latent.
-- **Decoder**: The VAE decoder transforms the super-resolved latent back into a high-resolution image in pixel space.
-- **Discriminator**: A GAN discriminator is trained to distinguish between the generated images and real high-resolution images, pushing the generator to create more realistic details.
+All settings are in `conf/` via **Hydra**.
 
-## 🙏 Acknowledgement
-This project is an implementation of the paper *"SupResDiffGAN: A New Approach for the Super-Resolution Task"* by Dawid Kopeć, Wojciech Kozłowski, Maciej Wizerkaniuk, Dawid Krutul, Jan Kocoń, and Maciej Zięba. We are grateful for their foundational research, which made this work possible.
+| File | Purpose |
+|------|--------|
+| `config_supresdiffgan.yaml` | Main training config |
 
-## 📜 License
-This project is licensed under the terms of the MIT License. See the [LICENSE](LICENSE) file for the full text.
+**Override example**:
+```bash
+python train_model.py -cn config_supresdiffgan dataset.batch_size=16 model.lr=1e-4
+```
+
+---
+
+## Model Architecture
+
+| Component | Description |
+|--------|-------------|
+| **Autoencoder** | `AutoencoderTiny` from `diffusers` → latent compression |
+| **U-Net Generator** | `UNet2DModel` with custom channels, ResNet, attention |
+| **Discriminator** | Patch-based CNN with `BCEWithLogitsLoss` |
+| **Perceptual Loss** | Optional VGG19 feature extractor |
+
+See:
+- `SupResDiffGAN/modules/UNet.py`
+- `SupResDiffGAN/modules/Discriminator.py`
+- `SupResDiffGAN/modules/FeatureExtractor.py`
+
+---
+
+## Acknowledgements
+
+This project is inspired by and builds upon:
+- [`dawir7/supresdiffgan`](https://github.com/dawir7/supresdiffgan) – original hybrid SR architecture
+- `diffusers` library by Hugging Face
+- Real-ESRGAN, ResShift, I2SB components
+
+We thank the authors for open-sourcing their work.
+
+---
+
+## License
+
+This project is currently **unlicensed**.  
+Please add a `LICENSE` file (e.g., MIT, Apache 2.0) to clarify usage.
+
+> Note: Adapted code may be subject to original licenses (BSD, NVIDIA, S-Lab, AFL 3.0).
+
+---
