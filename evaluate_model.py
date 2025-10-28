@@ -47,16 +47,14 @@ def save_results_to_csv(results: list[dict], filename: str) -> None:
 
     df = pd.DataFrame(results)
     df.to_csv(new_filename, index=False)
-    print(f"Evaluation results saved to {new_filename}")
 
 
 def log_bar_charts_to_wandb(
     results: list[dict],
     mode: str,
-    logger: WandbLogger,
 ) -> None:
     """
-    Log bar charts to wandb using wandb.Table and wandb.plot.bar().
+    Log bar charts to Wandb.
 
     Parameters
     ----------
@@ -64,132 +62,161 @@ def log_bar_charts_to_wandb(
         List of dictionaries containing the evaluation results.
     mode : str
         The evaluation mode.
-    logger : WandbLogger
-        Wandb logger instance.
     """
-    if not results:
-        return
-
-    df = pd.DataFrame(results)
-    
     if mode == "all":
-        df['config'] = df['posterior'] + '_steps' + df['step'].astype(str)
-        for metric in df['metric'].unique():
-            metric_df = df[df['metric'] == metric]
-            if not metric_df.empty:
-                table = wandb.Table(dataframe=metric_df[['config', 'value']])
-                logger.experiment.log({
-                    f"chart/{metric}": wandb.plot.bar(table, "config", "value", title=f"Evaluation Results for {metric}")
-                })
+        metrics = {}
+        for result in results:
+            metric_name = result["metric"]
+            key = f"{result['posterior']}_{result['step']}"
+            if metric_name not in metrics:
+                metrics[metric_name] = []
+            metrics[metric_name].append([key, result["value"]])
+
+        for metric_name, data in metrics.items():
+            table = wandb.Table(data=data, columns=["Posterior_Step", metric_name])
+            chart_key = f"bar_chart_{metric_name}"
+            wandb.log({chart_key: wandb.plot.bar(table, "Posterior_Step", metric_name)})
     else:
-        key_col = "step" if mode == "steps" else "posterior"
-        for metric in df['metric'].unique():
-            metric_df = df[df['metric'] == metric]
-            if not metric_df.empty:
-                table = wandb.Table(dataframe=metric_df[[key_col, 'value']])
-                logger.experiment.log({
-                    f"chart/{metric}": wandb.plot.bar(table, key_col, "value", title=f"Evaluation by {key_col.capitalize()} for {metric}")
-                })
+        metrics = {}
+        for result in results:
+            metric_name = result["metric"]
+            key = result.get("step", result.get("posterior"))
+            if metric_name not in metrics:
+                metrics[metric_name] = []
+            metrics[metric_name].append([key, result["value"]])
+
+        for metric_name, data in metrics.items():
+            table = wandb.Table(data=data, columns=[mode.capitalize(), metric_name])
+            chart_key = f"bar_chart_{metric_name}_{mode}"
+            wandb.log(
+                {chart_key: wandb.plot.bar(table, mode.capitalize(), metric_name)}
+            )
 
 
-def evaluate_model(cfg, model, trainer: Trainer, test_loader, logger: WandbLogger) -> None:
+def evaluate_model(cfg, model, trainer: Trainer, test_loader) -> None:
     """Evaluate the model based on the specified configuration.
 
     Parameters
     ----------
-    cfg : OmegaConf
+    cfg : Any
         Configuration object containing evaluation settings.
-    model : pl.LightningModule
+    model : Any
         The model to be evaluated.
     trainer : Trainer
         PyTorch Lightning Trainer object.
-    test_loader : torch.utils.data.DataLoader
+    test_loader : Any
         DataLoader for the test dataset.
-    logger: WandbLogger
-        The logger for recording results.
     """
     results = []
 
-    if cfg.evaluation.mode in ["steps", "all"]:
+    if cfg.evaluation.mode == "steps":
         for interference_step in cfg.evaluation.steps:
             model.diffusion.set_timesteps(interference_step)
-            trainer.test(model, test_loader, ckpt_path=None)
+            trainer.test(model, test_loader)
             metrics = trainer.callback_metrics
             for metric_name, metric_value in metrics.items():
-                if "test/" in metric_name:
-                    clean_metric_name = metric_name.replace("test/", "")
-                    results.append({
+                metric_name = metric_name.replace("test/", "")
+                results.append(
+                    {
                         "step": interference_step,
-                        "posterior": cfg.diffusion.posterior_type,
-                        "metric": clean_metric_name,
+                        "metric": metric_name,
                         "value": metric_value.item(),
-                    })
+                    }
+                )
 
-    if cfg.evaluation.mode in ["posterior", "all"]:
+    elif cfg.evaluation.mode == "posterior":
         for posterior in cfg.evaluation.posteriors:
             model.diffusion.set_posterior_type(posterior)
-            # Use default timesteps when evaluating posteriors
-            model.diffusion.set_timesteps(cfg.diffusion.timesteps)
-            trainer.test(model, test_loader, ckpt_path=None)
+            trainer.test(model, test_loader)
             metrics = trainer.callback_metrics
             for metric_name, metric_value in metrics.items():
-                if "test/" in metric_name:
-                    clean_metric_name = metric_name.replace("test/", "")
-                    results.append({
-                        "step": cfg.diffusion.timesteps,
+                metric_name = metric_name.replace("test/", "")
+                results.append(
+                    {
                         "posterior": posterior,
-                        "metric": clean_metric_name,
+                        "metric": metric_name,
                         "value": metric_value.item(),
-                    })
-    
-    if not results:
-        raise ValueError("No results were generated. Check your evaluation configuration.")
+                    }
+                )
 
-    log_bar_charts_to_wandb(results, cfg.evaluation.mode, logger)
+    elif cfg.evaluation.mode == "all":
+        for posterior in cfg.evaluation.posteriors:
+            model.diffusion.set_posterior_type(posterior)
+            for interference_step in cfg.evaluation.steps:
+                model.diffusion.set_timesteps(interference_step)
+                trainer.test(model, test_loader)
+                metrics = trainer.callback_metrics
+                for metric_name, metric_value in metrics.items():
+                    metric_name = metric_name.replace("test/", "")
+                    results.append(
+                        {
+                            "posterior": posterior,
+                            "step": interference_step,
+                            "metric": metric_name,
+                            "value": metric_value.item(),
+                        }
+                    )
+    else:
+        raise UnknownModeException()
+
+    log_bar_charts_to_wandb(results, cfg.evaluation.mode)
 
     if cfg.evaluation.save_results:
         save_results_to_csv(results, cfg.evaluation.results_file)
 
 
-@hydra.main(version_base=None, config_path="conf", config_name="config_supresdiffgan_evaluation")
+@hydra.main(version_base=None, config_path="conf", config_name="config")
 def main(cfg) -> None:
-    """Main function to evaluate the model based on the provided configuration."""
+    """Main function to evaluate the model based on the provided configuration.
 
+    This function loads the model, sets up the logger, initializes the trainer,
+    and evaluates the model using the specified configuration.
+
+    Parameters
+    ----------
+    cfg : OmegaConf
+        Configuration object containing all settings for model evaluation.
+
+    Returns
+    -------
+    None
+
+    Raises
+    ------
+    EvaluateFreshInitializedModelException
+        If no pre-trained model is specified in the configuration.
+    """
+    torch.set_float32_matmul_precision('medium')
     if cfg.model.load_model is None:
-        raise EvaluateFreshInitializedModelException("The 'load_model' path in the config cannot be empty for evaluation.")
+        raise EvaluateFreshInitializedModelException()
 
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
-    
-    # Use the correct logger config path
     logger = WandbLogger(
-        project=cfg.wandb_logger.project,
-        entity=cfg.wandb_logger.entity,
-        name=f"evaluation_{final_model_path.split('/')[-1].split('.')[0]}",
+        project=cfg.wandb.project,
+        name=final_model_path.split("/")[-1],
+        save_dir="logs",
         config=config_dict,
+        entity=cfg.wandb.entity,
     )
 
     device = "cuda" if torch.cuda.is_available() else "cpu"
-    num_gpus = torch.cuda.device_count() if device == "cuda" else 0
+    num_gpus = torch.cuda.device_count()
 
     model = model_selection(cfg=cfg, device=device)
     _, _, test_loader = train_val_test_loader(cfg=cfg)
 
     model = model.to(device)
 
-    # Simplify trainer strategy for single/multi GPU
     trainer = Trainer(
-        accelerator='gpu' if num_gpus > 0 else 'cpu',
-        devices=num_gpus if num_gpus > 0 else 1,
+        accelerator=cfg.trainer.accelerator,
+        devices=cfg.trainer.devices,
+        precision=cfg.trainer.precision,
         logger=logger,
-        strategy=DDPStrategy(find_unused_parameters=False) if num_gpus > 1 else 'auto',
-    )
-    
-    print(f"Starting evaluation for model: {cfg.model.load_model}")
-    evaluate_model(cfg, model, trainer, test_loader, logger)
-    print("Evaluation finished.")
+    )   
+
+    evaluate_model(cfg, model, trainer, test_loader)
 
 
 if __name__ == "__main__":
     main()
-

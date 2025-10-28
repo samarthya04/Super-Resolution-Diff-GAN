@@ -1,83 +1,73 @@
-# This configuration is for the FINAL fine-tuning phase to break the performance plateau.
-# Key changes: Resumes from the BEST available checkpoint with a drastically reduced learning rate.
-# VALIDATION IS NOW SET TO RUN EVERY EPOCH.
-
-mode: 'train-test'
+mode: 'test'
 use_perceptual_loss: true
 
 model:
   name: 'SupResDiffGAN'
-  # 1. DRASTICALLY REDUCED LEARNING RATE for final fine-tuning.
-  lr: 0.000002
+  lr: 0.000005
   alfa_perceptual: 0.001
-  # 2. SLIGHTLY INCREASED ADVERSARIAL LOSS to push for more realistic details.
-  alfa_adv: 0.02
-  load_model: null
+  alfa_adv: 0.008
+  load_model: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
 
 trainer:
-  max_epochs: 450
-  max_steps: -1
-  # 3. CHANGED TO RUN VALIDATION EVERY EPOCH.
-  check_val_every_n_epoch: 1
-  limit_val_batches: 0.25
-  log_every_n_steps: 1
-  precision: 16-mixed 
+  max_epochs: 250
+  max_steps: -1 
+  check_val_every_n_epoch: 5
+  limit_val_batches: 0.25 
+  log_every_n_steps: 10
+  precision: 16-mixed
   accelerator: 'gpu'
   devices: 1
-  # 4. CRITICAL: RESUMING FROM YOUR BEST CHECKPOINT (epoch 214).
-  resume_from_checkpoint: "models/checkpoints/SupResDiffGAN-epoch=214-val/LPIPS=0.144.ckpt"
+  resume_from_checkpoint: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
 
 dataset:
   name: 'celeb'
-  batch_size: 32   
+  batch_size: 32
   resize: true
   scale: 4
 
 evaluation:
   mode: 'all'
   steps:
+    - 50
     - 100
-    - 200
-    - 500
+    - 200 
   posteriors:
     - 'ddpm'
     - 'ddim'
   save_results: true
-  results_file: 'evaluation_results/final_finetune_evaluation.csv'
+  results_file: 'evaluation_results/final_evaluation.csv'
 
 checkpoint:
   monitor: 'val/LPIPS'
   dirpath: 'models/checkpoints/'
   save_top_k: 1
   mode: 'min'
-  # 5. This will ensure 'last.ckpt' is saved from this point forward.
   save_last: true
-  filename: 'SupResDiffGAN_Final_Finetuned-{epoch:02d}-{val/LPIPS:.4f}'
+  filename: 'SupResDiffGAN-{epoch:02d}-{val/LPIPS:.4f}'
 
 autoencoder: 'VAE'
 feature_extractor: true
 
 unet:
   - 64
-  - 64
+  - 96
   - 128
-  - 128
+  - 256
 
 diffusion:
-  timesteps: 50
+  timesteps: 200
   beta_type: 'cosine'
   posterior_type: 'ddpm'
-  validation_timesteps: 150
+  validation_timesteps: 100
   validation_posterior_type: 'ddim'
 
 discriminator:
   in_channels: 6
   channels:
     - 64
-    - 64
     - 128
+    - 256
 
-wandb_logger:
+wandb:
   project: 'SupResDiffGAN'
   entity: 'samarthya04-kiit-deemed-to-be-university'
-

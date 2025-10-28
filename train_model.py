@@ -43,8 +43,8 @@ def main(cfg) -> None:
     final_model_path = model_path(cfg)
     config_dict = OmegaConf.to_container(cfg, resolve=True)
     logger = WandbLogger(
-        project=cfg.wandb_logger.project,
-        entity=cfg.wandb_logger.entity,
+        project=cfg.wandb.project,
+        entity=cfg.wandb.entity,
         name=final_model_path.split("/")[-1],
         config=config_dict,
     )
@@ -55,13 +55,16 @@ def main(cfg) -> None:
     model = model_selection(cfg=cfg, device=device)
     train_loader, val_loader, test_loader = train_val_test_loader(cfg=cfg)
 
+    # --- FIX IS HERE ---
     checkpoint_callback = ModelCheckpoint(
         monitor=cfg.checkpoint.monitor,  # val/LPIPS
         dirpath=cfg.checkpoint.dirpath,
         filename=f"{cfg.model.name}-{{epoch:02d}}-{{val/LPIPS:.3f}}",  # Use val/LPIPS
         save_top_k=cfg.checkpoint.save_top_k,
         mode=cfg.checkpoint.mode,
+        save_last=cfg.checkpoint.save_last  # <-- THIS LINE IS ADDED
     )
+    # --- END FIX ---
 
     model = model.to(device)
 
@@ -83,19 +86,80 @@ def main(cfg) -> None:
 
     if cfg.mode == "train":
         trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
-        torch.save(model.state_dict(), f"{final_model_path}.pth")
+        
+        # --- UPDATED LOGIC ---
+        # Load the best checkpoint and save its state_dict
+        best_ckpt_path = checkpoint_callback.best_model_path
+        
+        if not best_ckpt_path:
+             print("Warning: No best checkpoint path found. Saving the LAST model.")
+             best_ckpt_path = trainer.checkpoint_callback.last_model_path
+
+        if best_ckpt_path:
+            print(f"Fit complete. Loading model state_dict from: {best_ckpt_path}")
+            best_ckpt = torch.load(best_ckpt_path, map_location=device)
+            model.load_state_dict(best_ckpt['state_dict'])
+            print(f"Saving model state_dict to: {final_model_path}.pth")
+            torch.save(model.state_dict(), f"{final_model_path}.pth")
+        else:
+            print("Warning: No best OR last checkpoint found. Saving the model in memory.")
+            torch.save(model.state_dict(), f"{final_model_path}.pth")
 
     elif cfg.mode == "train-test":
+        # 1. Train the model
         trainer.fit(model, train_loader, val_loader, ckpt_path=ckpt_path)
-        torch.save(model.state_dict(), f"{final_model_path}.pth")
+
+        # 2. Get the path to the best checkpoint
+        best_ckpt_path = checkpoint_callback.best_model_path
+        
+        # --- UPDATED LOGIC ---
+        if not best_ckpt_path:
+            print("Warning: No best checkpoint path found. Testing/Saving the LAST model.")
+            # Fallback to the last model path if it exists
+            best_ckpt_path = trainer.checkpoint_callback.last_model_path
+        
+        if best_ckpt_path:
+            # 3. Load the best/last checkpoint's state_dict into your model object
+            print(f"Fit complete. Loading model state_dict from: {best_ckpt_path}")
+            best_ckpt = torch.load(best_ckpt_path, map_location=device)
+            model.load_state_dict(best_ckpt['state_dict'])
+        else:
+            print("Warning: No checkpoint found. Testing/Saving the LAST model in memory.")
+
+        # 4. Now 'model' IS your best/last model
+        print("Adjusting model for testing...")
         model = adjust_model_for_testing(cfg, model)
-        trainer.test(model, test_loader)
+        
+        # 5. Test the loaded model
+        print("Running test on the loaded model...")
+        trainer.test(model, test_loader) 
+
+        # 6. Save the loaded model's state_dict
+        print(f"Saving loaded model's state_dict to: {final_model_path}.pth")
+        torch.save(model.state_dict(), f"{final_model_path}.pth")
+        # --- END UPDATED LOGIC ---
 
     elif cfg.mode == "test":
         if cfg.model.load_model is None:
             raise EvaluateFreshInitializedModelException()
+
+        # --- UPDATED LOGIC ---
+        # You must load the weights into the model *before* testing
+        print(f"Loading model for testing from: {cfg.model.load_model}")
+        ckpt = torch.load(cfg.model.load_model, map_location=device)
+        
+        # Check if checkpoint is from Lightning (has 'state_dict') or raw weights
+        if 'state_dict' in ckpt:
+            model.load_state_dict(ckpt['state_dict'])
+        else:
+            model.load_state_dict(ckpt)
+        
+        print("Adjusting model for testing...")
         model = adjust_model_for_testing(cfg, model)
+        
+        print("Running test...")
         trainer.test(model, test_loader)
+        # --- END UPDATED LOGIC ---
 
     else:
         raise UnknownModeException()

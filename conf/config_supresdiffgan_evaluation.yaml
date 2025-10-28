@@ -1,76 +1,62 @@
-# This configuration is set up for evaluating a trained model.
-# The `evaluate_model.py` script will use this file.
-
 mode: 'test'
 use_perceptual_loss: false
 
 model:
   name: 'SupResDiffGAN'
-  lr: 0.0001
-  alfa_perceptual: 0.001
-  alfa_adv: 0.005
-  # CRITICAL: Path to the best trained model checkpoint.
-  # Please verify this path points to your final .ckpt file.
-  load_model: "models/checkpoints/SupResDiffGAN-epoch=214-val/LPIPS=0.144.ckpt"
+  
+  # 1. LOAD YOUR BEST MODEL
+  load_model: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
 
-trainer:
-  # Training-specific parameters are not used in evaluation mode.
-  precision: 16
-  accelerator: 'gpu'
-  devices: 1
+# 2. MATCH THE SCRIPT'S WANDB KEYS
+wandb:
+  project: 'SupResDiffGAN'
+  entity: 'samarthya04-kiit-deemed-to-be-university'
 
 dataset:
   name: 'celeb'
-  batch_size: 32  # Batch size for evaluation
+  batch_size: 32
   resize: true
   scale: 4
 
 evaluation:
-  # 'all' will test every combination of steps and posteriors.
-  # Other options: 'steps' or 'posterior'
   mode: 'all'
+  
+  # 3. FIX THE STEPS
+  # Steps must be less than or equal to diffusion.timesteps (200)
   steps:
+    - 50
     - 100
-    - 200
-    - 500
+    - 200 
   posteriors:
     - 'ddpm'
     - 'ddim'
   save_results: true
-  results_file: 'evaluation_results/final_evaluation_results.csv'
+  results_file: 'evaluation_results/final_evaluation.csv'
 
-checkpoint:
-  # These settings are for saving checkpoints during training and are not used in evaluation.
-  monitor: 'val/LPIPS'
-  dirpath: 'models/checkpoints/'
-  save_top_k: 1
-  mode: 'min'
-  filename: 'SupResDiffGAN-{epoch:02d}-{val_LPIPS:.3f}'
+# --- Model architecture MUST match the trained model ---
 
 autoencoder: 'VAE'
 feature_extractor: true
 
 unet:
   - 64
-  - 64
+  - 96
   - 128
-  - 128
+  - 256
 
 diffusion:
-  timesteps: 50
+  timesteps: 200
   beta_type: 'cosine'
   posterior_type: 'ddpm'
-  validation_timesteps: 25
+  
+  # These are not used by the new script, but it's good to keep them
+  # as a record of what the model was trained with.
+  validation_timesteps: 100
   validation_posterior_type: 'ddim'
 
 discriminator:
   in_channels: 6
   channels:
     - 64
-    - 64
     - 128
-
-wandb_logger:
-  project: 'SupResDiffGAN' # your wandb project
-  entity: 'samarthya04-kiit-deemed-to-be-university'
-
+    - 256

@@ -56,9 +56,10 @@ class SupResDiffGAN(pl.LightningModule):
         self.vgg_loss = vgg_loss
         self.content_loss = nn.MSELoss()
         self.adversarial_loss = nn.BCEWithLogitsLoss()  # From samarthya04 for numerical stability
-        self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex").to(
-            self.device
-        )
+        
+        # --- FIX 1: Removed .to(self.device) ---
+        self.lpips = LearnedPerceptualImagePatchSimilarity(net_type="alex")
+        # --- END FIX 1 ---
 
         self.lr = learning_rate
         self.alfa_adv = alfa_adv
@@ -372,12 +373,16 @@ class SupResDiffGAN(pl.LightningModule):
             sr_img_np = sr_img[i].detach().cpu().numpy().transpose(1, 2, 0)
             hr_img_np = (hr_img_np + 1) / 2
             sr_img_np = (sr_img_np + 1) / 2
+            
+            # --- FIX 2: Corrected array slicing ---
             hr_img_np = hr_img_np[
-                :, : padding_info["hr"][i][1], : padding_info["hr"][i][0]
+                : padding_info["hr"][i][1], : padding_info["hr"][i][0], :
             ]
             sr_img_np = sr_img_np[
-                :, : padding_info["hr"][i][1], : padding_info["hr"][i][0]
+                : padding_info["hr"][i][1], : padding_info["hr"][i][0], :
             ]
+            # --- END FIX 2 ---
+            
             psnr = peak_signal_noise_ratio(
                 hr_img_np, sr_img_np, data_range=1.0)
             ssim = structural_similarity(
