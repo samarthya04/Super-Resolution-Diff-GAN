@@ -1,16 +1,23 @@
 mode: 'test'
-use_perceptual_loss: false
+use_perceptual_loss: true
 
 model:
   name: 'SupResDiffGAN'
-  
-  # 1. LOAD YOUR BEST MODEL
+  lr: 0.000005
+  alfa_perceptual: 0.001
+  alfa_adv: 0.008
   load_model: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
 
-# 2. MATCH THE SCRIPT'S WANDB KEYS
-wandb:
-  project: 'SupResDiffGAN'
-  entity: 'samarthya04-kiit-deemed-to-be-university'
+trainer:
+  max_epochs: 250
+  max_steps: -1 
+  check_val_every_n_epoch: 5
+  limit_val_batches: 0.25 
+  log_every_n_steps: 10
+  precision: 16-mixed
+  accelerator: 'gpu'
+  devices: 1
+  resume_from_checkpoint: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
 
 dataset:
   name: 'celeb'
@@ -20,9 +27,6 @@ dataset:
 
 evaluation:
   mode: 'all'
-  
-  # 3. FIX THE STEPS
-  # Steps must be less than or equal to diffusion.timesteps (200)
   steps:
     - 50
     - 100
@@ -33,7 +37,13 @@ evaluation:
   save_results: true
   results_file: 'evaluation_results/final_evaluation.csv'
 
-# --- Model architecture MUST match the trained model ---
+checkpoint:
+  monitor: 'val/LPIPS'
+  dirpath: 'models/checkpoints/'
+  save_top_k: 1
+  mode: 'min'
+  save_last: true
+  filename: 'SupResDiffGAN-{epoch:02d}-{val/LPIPS:.4f}'
 
 autoencoder: 'VAE'
 feature_extractor: true
@@ -48,9 +58,6 @@ diffusion:
   timesteps: 200
   beta_type: 'cosine'
   posterior_type: 'ddpm'
-  
-  # These are not used by the new script, but it's good to keep them
-  # as a record of what the model was trained with.
   validation_timesteps: 100
   validation_posterior_type: 'ddim'
 
@@ -60,3 +67,7 @@ discriminator:
     - 64
     - 128
     - 256
+
+wandb:
+  project: 'SupResDiffGAN'
+  entity: 'samarthya04-kiit-deemed-to-be-university'

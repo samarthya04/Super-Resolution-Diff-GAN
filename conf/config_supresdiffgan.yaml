@@ -1,4 +1,4 @@
-mode: 'test'
+mode: 'train-test'
 use_perceptual_loss: true
 
 model:
@@ -6,7 +6,7 @@ model:
   lr: 0.000005
   alfa_perceptual: 0.001
   alfa_adv: 0.008
-  load_model: "models/checkpoints/SupResDiffGAN-epoch=204-val/LPIPS=0.148.ckpt"
+  load_model: null
 
 trainer:
   max_epochs: 250
